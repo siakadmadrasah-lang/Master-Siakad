@@ -1,0 +1,6 @@
+{
+  "name": "SIAKAD MIMA 2 Sanggreman",
+  "description": "Sistem Informasi Akademik Madrasah Ibtidaiyah Ma'arif 2 Sanggreman",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
