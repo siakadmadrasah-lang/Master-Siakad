@@ -482,7 +482,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title }) => {
             </DropdownMenu>
           </div>
         </header>
-        <main className="flex-1 p-3 sm:p-4 lg:p-8 max-w-full overflow-x-hidden min-w-0 print:p-0">
+        <main className="flex-1 p-3 sm:p-4 lg:p-8 max-w-full overflow-x-hidden min-w-0 pb-20 lg:pb-8 print:p-0">
           {activeMadrasah?.is_active === false && !isSuperAdmin && (
             <div className="mb-6 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-800 flex items-center gap-3 shadow-sm">
               <ShieldAlert className="w-6 h-6 text-rose-600 shrink-0" />
@@ -548,21 +548,23 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title }) => {
           {children}
         </main>
 
-        {/* Sticky Footer Admin Dashboard & System */}
-        <footer className="sticky bottom-0 z-30 bg-white/95 backdrop-blur-xl border-t border-slate-200/80 px-3 sm:px-4 lg:px-8 py-2.5 sm:py-3 shadow-lg print:hidden w-full max-w-full overflow-hidden">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-600 w-full min-w-0">
-            <div className="flex items-center gap-1.5 sm:gap-2 font-extrabold text-slate-800 text-center sm:text-left min-w-0 max-w-full truncate">
-              <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-lg bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-black text-[9px] sm:text-[10px] shadow-xs shrink-0">
+        {/* Footer Admin Dashboard & System Information */}
+        <footer className="mt-auto bg-white/95 backdrop-blur-xl border-t border-slate-200/80 px-4 sm:px-6 lg:px-8 py-3.5 shadow-lg print:hidden w-full max-w-full mb-16 lg:mb-0">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-slate-600 w-full min-w-0">
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 font-extrabold text-slate-800 text-center md:text-left min-w-0 w-full md:w-auto">
+              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-black text-[10px] shadow-xs shrink-0">
                 S
               </div>
-              <span className="shrink-0 text-[11px] sm:text-xs">Si@Kad Madrasah &copy; {new Date().getFullYear()}</span>
-              <span className="text-slate-300 hidden sm:inline">|</span>
-              <span className="text-emerald-700 font-extrabold truncate max-w-[140px] xs:max-w-[180px] sm:max-w-[300px] text-[11px] sm:text-xs">
+              <span className="shrink-0 text-xs font-black text-slate-900">
+                Si@Kad Madrasah &copy; {new Date().getFullYear()}
+              </span>
+              <span className="text-slate-300 hidden sm:inline">&bull;</span>
+              <span className="text-emerald-700 font-extrabold text-xs break-words max-w-full">
                 {activeMadrasah?.nama_madrasah || 'Sistem Informasi Akademik'}
               </span>
             </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 font-bold text-slate-600 text-[10px] sm:text-[11px] min-w-0">
+            <div className="hidden md:flex flex-wrap items-center justify-center gap-3 font-bold text-slate-600 text-xs shrink-0">
               <button
                 type="button"
                 onClick={() => navigate('/admin')}
@@ -596,7 +598,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title }) => {
                 className="hover:text-emerald-700 transition-colors flex items-center gap-1 cursor-pointer"
               >
                 <UserCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>GTK</span>
+                <span>Data GTK</span>
               </button>
               <span className="text-slate-300">&bull;</span>
               <a
