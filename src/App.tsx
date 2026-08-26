@@ -15,6 +15,8 @@ import RunningTextTicker from "./components/RunningTextTicker";
 import AIAssistant from "./components/AIAssistant";
 import ScrollToTop from "./components/ScrollToTop";
 
+import ErrorBoundary from "./components/ErrorBoundary";
+
 // Lazy Loaded Pages untuk Performa Loading Super Cepat
 const Index = lazy(() => import("./pages/Index"));
 const Login = lazy(() => import("./pages/Login"));

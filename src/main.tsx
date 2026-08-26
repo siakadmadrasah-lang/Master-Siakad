@@ -1,36 +1,21 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./globals.css";
+import ErrorBoundary from "./components/ErrorBoundary";
 
-// 1. Unregister any stale Service Workers and clear CacheStorage to prevent outdated pages
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    for (const registration of registrations) {
-      registration.unregister();
-    }
-  }).catch((err) => {
-    console.warn("ServiceWorker unregister error:", err);
-  });
+// 1. Bersihkan URL jika ada parameter cache-busting (?nocache=... atau ?t=...)
+try {
+  if (window.location.search.includes("nocache=") || window.location.search.includes("t=")) {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("nocache");
+    url.searchParams.delete("t");
+    window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
+  }
+} catch {
+  // ignore
 }
 
-if ("caches" in window) {
-  caches.keys().then((names) => {
-    for (const name of names) {
-      caches.delete(name);
-    }
-  }).catch((err) => {
-    console.warn("Cache deletion error:", err);
-  });
-}
-
-// 2. Bersihkan URL jika ada parameter cache-busting (?nocache=...)
-if (window.location.search.includes("nocache=")) {
-  const url = new URL(window.location.href);
-  url.searchParams.delete("nocache");
-  window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
-}
-
-// 3. Tangani ChunkLoadError / Dynamic Import Failure akibat update versi aplikasi di server
+// 2. Tangani ChunkLoadError / Dynamic Import Failure akibat update versi aplikasi di server
 window.addEventListener("error", (event) => {
   const message = event.message || "";
   const isChunkError =
@@ -45,22 +30,33 @@ window.addEventListener("error", (event) => {
     const now = Date.now();
 
     // Hindari perulangan reload terus menerus jika error berasal dari hal lain
-    if (!lastReload || now - parseInt(lastReload, 10) > 10000) {
+    if (!lastReload || now - parseInt(lastReload, 10) > 15000) {
       sessionStorage.setItem("last_chunk_reload", now.toString());
       
-      // Bersihkan cache dan reload secara paksa
-      if ("caches" in window) {
-        caches.keys().then((names) => {
-          Promise.all(names.map((name) => caches.delete(name))).then(() => {
-            window.location.href = window.location.pathname + "?nocache=" + Date.now() + window.location.hash;
+      try {
+        if ("caches" in window) {
+          caches.keys().then((names) => {
+            Promise.all(names.map((name) => caches.delete(name))).then(() => {
+              window.location.reload();
+            });
           });
-        });
-      } else {
-        window.location.href = window.location.pathname + "?nocache=" + Date.now() + window.location.hash;
+        } else {
+          window.location.reload();
+        }
+      } catch {
+        window.location.reload();
       }
     }
   }
 });
 
-createRoot(document.getElementById("root")!).render(<App />);
+const rootElement = document.getElementById("root");
+if (rootElement) {
+  createRoot(rootElement).render(
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
+
 

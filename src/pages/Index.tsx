@@ -70,9 +70,11 @@ const Index = () => {
           .maybeSingle();
         
         if (res?.value && Array.isArray(res.value)) {
-          const sorted = (res.value as AITeachingItem[]).sort((a, b) => 
-            new Date(b.created_at || b.tanggal_cetak).getTime() - new Date(a.created_at || a.tanggal_cetak).getTime()
-          );
+          const sorted = (res.value as AITeachingItem[]).sort((a, b) => {
+            const timeB = new Date(b.created_at || b.tanggal_cetak || 0).getTime() || 0;
+            const timeA = new Date(a.created_at || a.tanggal_cetak || 0).getTime() || 0;
+            return timeB - timeA;
+          });
           setMaterials(sorted);
         }
       } catch (error) {

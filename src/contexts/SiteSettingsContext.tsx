@@ -172,11 +172,18 @@ export const SiteSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
     return defaultSettings;
   });
-  const [loading, setLoading] = useState(true);
+  // If we already have cached settings in localStorage, we do not need to block initial render!
+  const [loading, setLoading] = useState<boolean>(() => {
+    try {
+      const cached = localStorage.getItem('siakad_site_settings');
+      return !cached;
+    } catch {
+      return false;
+    }
+  });
 
   const fetchSettings = useCallback(async () => {
     try {
-      // Perform parallel fetch to both Supabase Client and direct API endpoint for MySQL
       const fetchPromise = (async () => {
         try {
           const res = await supabase.from('site_settings').select('*');
@@ -186,23 +193,11 @@ export const SiteSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
         } catch (e) {
           // ignore
         }
-
-        try {
-          const directRes = await fetch('/api.php?action=select&table=site_settings');
-          if (directRes.ok) {
-            const json = await directRes.json();
-            if (json && Array.isArray(json.data) && json.data.length > 0) {
-              return json.data;
-            }
-          }
-        } catch (e) {
-          // ignore
-        }
         return null;
       })();
 
       const timeoutPromise = new Promise<any>((resolve) =>
-        setTimeout(() => resolve(null), 3000)
+        setTimeout(() => resolve(null), 1200)
       );
 
       const data: any = await Promise.race([fetchPromise, timeoutPromise]);
