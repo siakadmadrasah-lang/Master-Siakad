@@ -1,0 +1,12 @@
+node_modules/
+build/
+dist/
+assets/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+node-compile-cache/
+temp_repo/
+*.hm
