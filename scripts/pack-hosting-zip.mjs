@@ -5,8 +5,10 @@ import { execSync } from 'node:child_process';
 
 const rootDir = process.cwd();
 const distDir = path.join(rootDir, 'dist');
-const publicZipPath = path.join(rootDir, 'public', 'siakadmadrasah-plesk-ready.zip');
-const distZipPath = path.join(distDir, 'siakadmadrasah-plesk-ready.zip');
+const publicPleskZipPath = path.join(rootDir, 'public', 'siakadmadrasah-plesk-ready.zip');
+const distPleskZipPath = path.join(distDir, 'siakadmadrasah-plesk-ready.zip');
+const publicCpanelZipPath = path.join(rootDir, 'public', 'siakadmadrasah-cpanel-ready.zip');
+const distCpanelZipPath = path.join(distDir, 'siakadmadrasah-cpanel-ready.zip');
 
 function walkDir(currentDir, relativePath = '', fileList = []) {
   const entries = fs.readdirSync(currentDir, { withFileTypes: true });
@@ -52,9 +54,11 @@ async function packZip() {
     const pythonScript = path.join(rootDir, 'scripts', 'package-zip.py');
     if (fs.existsSync(pythonScript)) {
       execSync(`python3 ${pythonScript}`, { stdio: 'inherit' });
-      if (fs.existsSync(publicZipPath)) {
-        fs.copyFileSync(publicZipPath, distZipPath);
-        console.log('[pack-hosting-zip] ✅ File ZIP berhasil dibuat menggunakan Python zipfile.');
+      if (fs.existsSync(publicPleskZipPath)) {
+        fs.copyFileSync(publicPleskZipPath, distPleskZipPath);
+        fs.copyFileSync(publicPleskZipPath, publicCpanelZipPath);
+        fs.copyFileSync(publicPleskZipPath, distCpanelZipPath);
+        console.log('[pack-hosting-zip] ✅ File ZIP cPanel & Plesk berhasil dibuat menggunakan Python zipfile.');
         return;
       }
     }
@@ -76,12 +80,14 @@ async function packZip() {
     compressionOptions: { level: 6 }
   });
 
-  fs.mkdirSync(path.dirname(publicZipPath), { recursive: true });
-  fs.writeFileSync(publicZipPath, content);
-  fs.writeFileSync(distZipPath, content);
+  fs.mkdirSync(path.dirname(publicPleskZipPath), { recursive: true });
+  fs.writeFileSync(publicPleskZipPath, content);
+  fs.writeFileSync(distPleskZipPath, content);
+  fs.writeFileSync(publicCpanelZipPath, content);
+  fs.writeFileSync(distCpanelZipPath, content);
 
   const sizeMb = (content.length / (1024 * 1024)).toFixed(2);
-  console.log(`[pack-hosting-zip] ✅ Berhasil membuat siakadmadrasah-plesk-ready.zip (${sizeMb} MB) di public/ dan dist/`);
+  console.log(`[pack-hosting-zip] ✅ Berhasil membuat siakadmadrasah-cpanel-ready.zip & siakadmadrasah-plesk-ready.zip (${sizeMb} MB) di public/ dan dist/`);
 }
 
 packZip().catch((err) => {

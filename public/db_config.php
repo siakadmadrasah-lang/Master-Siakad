@@ -6,6 +6,6 @@
 // yang Anda buat di menu Database Plesk / cPanel hosting Anda.
 
 define('DB_HOST', 'localhost');
-define('DB_NAME', 'jaenal_siakadmadrasah');
-define('DB_USER', 'jaenal_siakadmadrasah');
+define('DB_NAME', 'masbagoes_siakad');
+define('DB_USER', 'masbagoes_siakad');
 define('DB_PASS', 'masbagus15');

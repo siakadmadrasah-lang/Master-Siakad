@@ -1,5 +1,5 @@
 {
-  "name": "vite_react_shadcn_ts",
+  "name": "siakad_mima_2_sanggreman",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,10 +8,6 @@
     "dev": "vite --host 0.0.0.0 --port 3000",
     "prebuild": "node scripts/prepare-static-meta.mjs production",
     "build": "vite build",
-    "postbuild": "node scripts/pack-hosting-zip.mjs",
-    "prebuild:dev": "node scripts/prepare-static-meta.mjs development",
-    "build:dev": "vite build --mode development",
-    "postbuild:dev": "node scripts/pack-hosting-zip.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

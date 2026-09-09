@@ -224,9 +224,9 @@ const BackupAdmin = () => {
                   <button 
                     type="button"
                     disabled={downloadingZip}
-                    onClick={() => handleDownloadFile('/siakadmadrasah-plesk-ready.zip', 'siakadmadrasah-plesk-ready.zip')}
-                    className="inline-flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-2xl h-14 px-8 shadow-xl hover:scale-105 active:scale-95 transition-all text-base shrink-0 cursor-pointer"
-                    title="Unduh file zip hosting siap pakai versi terbaru dari server AI ini"
+                    onClick={() => handleDownloadFile('/siakadmadrasah-cpanel-ready.zip', 'siakadmadrasah-cpanel-ready.zip')}
+                    className="inline-flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-2xl h-14 px-6 shadow-xl hover:scale-105 active:scale-95 transition-all text-base shrink-0 cursor-pointer"
+                    title="Unduh file ZIP cPanel hosting siap pakai dengan akun database masbagoes_siakad"
                   >
                     {downloadingZip ? (
                       <>
@@ -236,21 +236,21 @@ const BackupAdmin = () => {
                     ) : (
                       <>
                         <Download className="w-5 h-5" />
-                        Unduh ZIP Siap Deploy (Versi Terbaru Server)
+                        Unduh ZIP cPanel (Database masbagoes_siakad)
                       </>
                     )}
                   </button>
 
-                  <a 
-                    href="https://raw.githubusercontent.com/siakadmadrasah-lang/Master-Siakad/main/public/siakadmadrasah-plesk-ready.zip"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl h-14 px-5 border border-white/20 hover:scale-105 transition-all text-sm shrink-0"
-                    title="Unduh ZIP rilis dari GitHub Repository"
+                  <button 
+                    type="button"
+                    disabled={downloadingZip}
+                    onClick={() => handleDownloadFile('/siakadmadrasah-plesk-ready.zip', 'siakadmadrasah-plesk-ready.zip')}
+                    className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl h-14 px-5 border border-indigo-400/30 hover:scale-105 transition-all text-sm shrink-0 cursor-pointer"
+                    title="Unduh file ZIP Plesk/Universal hosting"
                   >
-                    <ExternalLink className="w-4 h-4" />
-                    ZIP dari GitHub
-                  </a>
+                    <Download className="w-4 h-4" />
+                    Unduh ZIP Plesk Ready
+                  </button>
 
                   <a 
                     href="https://github.com/siakadmadrasah-lang/Master-Siakad/archive/refs/heads/main.zip"

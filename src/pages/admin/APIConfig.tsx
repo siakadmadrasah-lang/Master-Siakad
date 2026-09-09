@@ -28,8 +28,8 @@ const APIConfig = () => {
     custom_ai_prompt: 'Anda adalah asisten AI untuk Si@Kad (Sistem Informasi Akademik Madrasah). Bantu pengguna menjawab pertanyaan seputar pendaftaran, kurikulum, dan informasi sekolah dengan ramah.',
     mysql_host: 'localhost',
     mysql_port: '3306',
-    mysql_database: 'jaenal_siakadmadrasah',
-    mysql_username: 'jaenal_siakadmadrasah',
+    mysql_database: 'masbagoes_siakad',
+    mysql_username: 'masbagoes_siakad',
     mysql_password: 'masbagus15',
     mysql_api_url: '/api.php',
     database_mode: 'hybrid' // 'hybrid' | 'mysql' | 'local'

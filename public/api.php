@@ -24,8 +24,8 @@ if (file_exists(__DIR__ . '/db_config.php')) {
 }
 
 $db_host = trim(defined('DB_HOST') ? DB_HOST : 'localhost');
-$db_name = trim(defined('DB_NAME') ? DB_NAME : 'jaenal_siakadmadrasah');
-$db_user = trim(defined('DB_USER') ? DB_USER : 'jaenal_siakadmadrasah');
+$db_name = trim(defined('DB_NAME') ? DB_NAME : 'masbagoes_siakad');
+$db_user = trim(defined('DB_USER') ? DB_USER : 'masbagoes_siakad');
 $db_pass = trim(defined('DB_PASS') ? DB_PASS : 'masbagus15');
 
 try {
@@ -34,10 +34,10 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
     ]);
-} catch (PDOException $e) {
+} catch (Throwable $e) {
     echo json_encode([
-        'error' => 'Koneksi Database MySQL Gagal. ' . $e->getMessage(),
-        'hint' => 'Pastikan DB_NAME, DB_USER, dan DB_PASS pada file db_config.php di hosting sudah sesuai (tanpa spasi ekstra). Pastikan juga User Database telah diberi Hak Akses (User Permissions) ke Database di Plesk/cPanel.'
+        'error' => 'Koneksi Database MySQL Gagal: ' . $e->getMessage(),
+        'hint' => 'Pastikan DB_NAME, DB_USER, dan DB_PASS pada file db_config.php di hosting sudah sesuai. Pastikan juga User Database telah diberi Hak Akses (User Permissions / All Privileges) ke Database di cPanel.'
     ]);
     exit();
 }

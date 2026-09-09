@@ -5,6 +5,23 @@
  * secara real-time dari database MySQL hosting (Plesk/cPanel) maupun fallback bawaan.
  */
 
+// PHP 7 Compatibility Polyfills untuk mencegah error 500 di hosting cPanel versi PHP lama
+if (!function_exists('str_contains')) {
+    function str_contains($haystack, $needle) {
+        return $needle !== '' && mb_strpos($haystack, $needle) !== false;
+    }
+}
+if (!function_exists('str_starts_with')) {
+    function str_starts_with($haystack, $needle) {
+        return (string)$needle !== '' && strncmp($haystack, $needle, strlen($needle)) === 0;
+    }
+}
+if (!function_exists('str_ends_with')) {
+    function str_ends_with($haystack, $needle) {
+        return $needle !== '' && substr($haystack, -strlen($needle)) === (string)$needle;
+    }
+}
+
 // Pastikan Browser Selalu Mengambil Versi Terbaru HTML & Asset
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Pragma: no-cache");
@@ -30,8 +47,8 @@ $canonicalUrl = $pageUrl;
 if (file_exists(__DIR__ . '/db_config.php')) {
     include_once __DIR__ . '/db_config.php';
     $db_host = defined('DB_HOST') ? DB_HOST : 'localhost';
-    $db_name = defined('DB_NAME') ? DB_NAME : 'jaenal_siakadmadrasah';
-    $db_user = defined('DB_USER') ? DB_USER : 'jaenal_siakadmadrasah';
+    $db_name = defined('DB_NAME') ? DB_NAME : 'masbagoes_siakad';
+    $db_user = defined('DB_USER') ? DB_USER : 'masbagoes_siakad';
     $db_pass = defined('DB_PASS') ? DB_PASS : 'masbagus15';
 
     try {
@@ -121,8 +138,8 @@ if (file_exists(__DIR__ . '/db_config.php')) {
                 }
             }
         }
-    } catch (Exception $e) {
-        // Fallback ke default jika database belum dikonfigurasi
+    } catch (Throwable $e) {
+        // Fallback ke default jika database belum dikonfigurasi atau belum dibuat
     }
 }
 
