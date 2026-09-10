@@ -22,7 +22,8 @@ import {
   Activity, 
   Award,
   CheckCircle2,
-  ChevronRight
+  ChevronRight,
+  RefreshCw
 } from 'lucide-react';
 import AdminLayout from '@/components/admin/AdminLayout';
 import { useSiteSettings } from '@/contexts/SiteSettingsContext';
@@ -177,9 +178,11 @@ const DashboardHome = () => {
     { label: 'Pendaftar SPMB', desc: 'Verifikasi berkas & seleksi', href: '/admin/spmb/pendaftar', icon: GraduationCap, color: 'from-blue-500 to-indigo-600' },
     { label: 'Mata Pelajaran', desc: 'Pengaturan modul kurikulum', href: '/admin/kurikulum/mata-pelajaran', icon: BookOpen, color: 'from-emerald-500 to-teal-600' },
     { label: 'Manajemen Siswa', desc: 'Database & mutasi siswa', href: '/admin/manajemen-siswa', icon: Users, color: 'from-purple-500 to-violet-600' },
+    { label: 'Update Sistem', desc: 'Pembaruan & sinkronisasi Git', href: '/admin/update', icon: RefreshCw, color: 'from-amber-500 to-orange-600' },
     { label: 'Logo Designer', desc: 'Kustomisasi identitas madrasah', href: '/admin/logo-designer', icon: Palette, color: 'from-pink-500 to-rose-600' },
     { label: 'Tahun Pelajaran', desc: 'Set semester & kalender', href: '/admin/tahun-pelajaran', icon: Calendar, color: 'from-amber-500 to-orange-600' },
     { label: 'Cetak Rapor', desc: 'Arsip & cetak nilai akhir', href: '/admin/arsip-akademik', icon: FileText, color: 'from-teal-500 to-cyan-600' },
+    { label: 'Backup & Restore', desc: 'Arsip data & paket hosting', href: '/admin/backup', icon: Layers, color: 'from-indigo-500 to-blue-600' },
   ];
 
   return (
@@ -202,6 +205,9 @@ const DashboardHome = () => {
             className="text-xs sm:text-sm font-semibold text-slate-700 flex items-center py-0.5 cursor-pointer"
           >
             <span className="inline-flex items-center gap-2 mr-8">
+              <span className="text-amber-600 font-bold">🚀 Pembaruan Sistem v2.5.0:</span> Menu Update Online & Sinkronisasi Git kini tersedia di Dashboard Admin.
+            </span>
+            <span className="inline-flex items-center gap-2 mr-8">
               <span className="text-emerald-700 font-bold">📢 SPMB Online {spmbYear}:</span> Pendaftaran Siswa Baru telah dibuka. Pastikan verifikasi berkas berjalan lancar.
             </span>
             <span className="inline-flex items-center gap-2 mr-8">
@@ -218,12 +224,13 @@ const DashboardHome = () => {
 
         {/* Right Link Button */}
         <a 
-          href="/admin/announcements" 
-          className="hidden md:flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-emerald-700 bg-slate-100 hover:bg-emerald-50 px-3 py-1.5 rounded-xl transition-colors shrink-0 border border-slate-200/70"
-          title="Buka Halaman Kelola Pengumuman"
+          href="/admin/update" 
+          className="hidden md:flex items-center gap-1.5 text-[11px] font-bold text-amber-800 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-xl transition-colors shrink-0 border border-amber-200"
+          title="Buka Halaman Pembaruan Sistem"
         >
-          <span>Semua</span>
-          <ChevronRight className="w-3 h-3 text-emerald-600" />
+          <RefreshCw className="w-3 h-3 text-amber-600 animate-spin-slow" />
+          <span>Update</span>
+          <ChevronRight className="w-3 h-3 text-amber-700" />
         </a>
       </div>
 
@@ -234,7 +241,7 @@ const DashboardHome = () => {
         <div className="absolute bottom-0 left-1/3 -mb-10 w-60 h-60 bg-teal-400/15 rounded-full blur-2xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5 sm:gap-6 min-w-0">
-          <div className="space-y-2 max-w-2xl min-w-0">
+          <div className="space-y-2.5 max-w-2xl min-w-0">
             <div className="inline-flex items-center gap-1.5 sm:gap-2 bg-emerald-500/20 backdrop-blur-md border border-emerald-400/30 px-2.5 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-extrabold text-emerald-300 max-w-full">
               <Sparkles className="w-3.5 h-3.5 text-yellow-400 animate-pulse shrink-0" />
               <span className="truncate">Sistem Informasi Akademik Madrasah Digital</span>
@@ -247,6 +254,32 @@ const DashboardHome = () => {
             <p className="text-emerald-100/90 text-xs sm:text-sm font-medium leading-relaxed break-words">
               Pusat kendali manajemen madrasah ibtidaiyah secara terintegrasi, real-time, dan aman.
             </p>
+
+            {/* Quick Banner Buttons: Update & Backup */}
+            <div className="pt-2 flex flex-wrap items-center gap-2.5">
+              <a
+                href="/admin/update"
+                id="btn-banner-update-system"
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-yellow-300 text-slate-950 font-black text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-lg hover:shadow-amber-400/25 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer border border-amber-300/80"
+                title="Buka Pusat Pembaruan Sistem (Git Pull & Update Hosting)"
+              >
+                <RefreshCw className="w-4 h-4 text-slate-950 shrink-0" />
+                <span>Update Sistem</span>
+                <span className="bg-slate-950/15 text-slate-950 text-[10px] font-extrabold px-1.5 py-0.5 rounded-md">
+                  v2.5.0
+                </span>
+              </a>
+
+              <a
+                href="/admin/backup"
+                id="btn-banner-backup-data"
+                className="inline-flex items-center gap-2 bg-emerald-800/70 hover:bg-emerald-700/80 text-emerald-100 font-bold text-xs sm:text-sm px-3.5 py-2.5 rounded-xl border border-emerald-600/50 backdrop-blur-sm transition-all"
+                title="Buka Menu Backup & Restore Database"
+              >
+                <Layers className="w-4 h-4 text-emerald-300" />
+                <span>Backup & Unduh ZIP</span>
+              </a>
+            </div>
           </div>
 
           {/* Time & Date Live Widget */}
@@ -385,14 +418,30 @@ const DashboardHome = () => {
                   <span className="font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">{semester}</span>
                 </div>
                 <div className="flex justify-between items-center">
+                  <span className="font-semibold text-slate-500">Versi SIAKAD:</span>
+                  <span className="font-extrabold text-amber-800 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-md">v2.5.0</span>
+                </div>
+                <div className="flex justify-between items-center">
                   <span className="font-semibold text-slate-500">Izin Akses:</span>
                   <span className="font-extrabold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md">Administrator</span>
                 </div>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 space-y-2">
+                <a
+                  href="/admin/update"
+                  id="btn-sidebar-update-system"
+                  className="w-full inline-flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-xs py-2.5 px-4 rounded-xl transition-all shadow-sm hover:shadow-md hover:scale-[1.01] active:scale-[0.98]"
+                  title="Buka Halaman Pembaruan Sistem"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin-slow" />
+                  <span>Update Sistem (Pembaruan)</span>
+                  <ChevronRight className="w-3.5 h-3.5 ml-auto text-amber-200" />
+                </a>
+
                 <a
                   href="/admin/identitas-madrasah"
+                  id="btn-sidebar-identitas-madrasah"
                   className="w-full inline-flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl transition-colors shadow-sm"
                 >
                   <span>Pengaturan Identitas Madrasah</span>
