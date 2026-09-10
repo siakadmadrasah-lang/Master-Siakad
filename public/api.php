@@ -74,8 +74,14 @@ try {
     exit();
 }
 
-// Buat tabel site_settings secara otomatis jika belum ada
+// Buat tabel site_settings & pendaftaran_spmb secara otomatis jika belum ada
 $pdo->exec("CREATE TABLE IF NOT EXISTS `site_settings` (
+    `id` VARCHAR(191) NOT NULL PRIMARY KEY,
+    `value` LONGTEXT NOT NULL,
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+$pdo->exec("CREATE TABLE IF NOT EXISTS `pendaftaran_spmb` (
     `id` VARCHAR(191) NOT NULL PRIMARY KEY,
     `value` LONGTEXT NOT NULL,
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
