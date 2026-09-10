@@ -69,6 +69,7 @@ const CalendarAdmin = lazy(() => import("./pages/admin/CalendarAdmin"));
 const LinksAdmin = lazy(() => import("./pages/admin/LinksAdmin"));
 const PembiasaanAdmin = lazy(() => import("./pages/admin/PembiasaanAdmin"));
 const BackupAdmin = lazy(() => import("./pages/admin/BackupAdmin"));
+const UpdateSystem = lazy(() => import("./pages/admin/UpdateSystem"));
 const KelolaMadrasah = lazy(() => import("./pages/admin/KelolaMadrasah"));
 const LogoDesigner = lazy(() => import("./pages/admin/LogoDesigner"));
 const PrintPreviewPage = lazy(() => import("./pages/admin/PrintPreviewPage"));
@@ -194,6 +195,7 @@ const App = () => (
                   <Route path="/admin/print-settings" element={<PrintSettings />} />
                   <Route path="/admin/api-config" element={<APIConfig />} />
                   <Route path="/admin/backup" element={<BackupAdmin />} />
+                  <Route path="/admin/update" element={<UpdateSystem />} />
                   <Route path="/admin/identitas-madrasah" element={<IdentitasMadrasah />} />
                   <Route path="/admin/data-tamatan" element={<DataTamatan />} />
                   <Route path="/admin/data-prestasi" element={<DataPrestasi />} />

@@ -170,7 +170,13 @@ function createHybridClient() {
             try {
               const apiUrl = getTargetApiUrl();
               for (const id of idsToDelete) {
-                await fetch(`${apiUrl}?action=delete&table=${tableName}&id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 2500);
+                await fetch(`${apiUrl}?action=delete&table=${tableName}&id=${encodeURIComponent(id)}`, {
+                  method: 'DELETE',
+                  signal: controller.signal
+                }).catch(() => {});
+                clearTimeout(timeoutId);
               }
             } catch (e) {
               // ignore
@@ -289,14 +295,21 @@ function createHybridClient() {
           // 1. Try MySQL PHP API Bridge
           try {
             const apiUrl = getTargetApiUrl();
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3500);
             const res = await fetch(`${apiUrl}?action=upsert&table=${tableName}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
+              body: JSON.stringify(payload),
+              signal: controller.signal
             });
+            clearTimeout(timeoutId);
             if (res.ok) {
-              const json = await res.json();
-              return { data: json.data || payload, error: null };
+              const contentType = res.headers.get('content-type') || '';
+              if (contentType.includes('application/json')) {
+                const json = await res.json();
+                return { data: json.data || payload, error: null };
+              }
             }
           } catch (e) {
             // MySQL API offline
@@ -327,10 +340,14 @@ function createHybridClient() {
             formData.append('file', file, fileName);
             formData.append('filePath', filePath);
 
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 6000);
             const res = await fetch(`${targetApiUrl}?action=upload`, {
               method: 'POST',
-              body: formData
+              body: formData,
+              signal: controller.signal
             });
+            clearTimeout(timeoutId);
 
             if (res.ok) {
               const contentType = res.headers.get('content-type') || '';

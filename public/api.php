@@ -762,24 +762,51 @@ if ($action === 'restore_full') {
     if ($uploadedZipPath && class_exists('ZipArchive')) {
         $zip = new ZipArchive();
         if ($zip->open($uploadedZipPath) === true) {
-            // 1. Ekstrak & Restore database.json
+            // 1. Ekstrak & Restore database.json (cek di root maupun subdirektori)
             $dbJson = $zip->getFromName('database.json');
+            if ($dbJson === false) {
+                for ($i = 0; $i < $zip->numFiles; $i++) {
+                    $name = $zip->getNameIndex($i);
+                    if (basename($name) === 'database.json' || (preg_match('/\.json$/i', $name) && !preg_match('/(manifest|package|composer)/i', $name))) {
+                        $dbJson = $zip->getFromIndex($i);
+                        break;
+                    }
+                }
+            }
+
             if ($dbJson) {
                 $jsonObj = json_decode($dbJson, true);
-                if ($jsonObj && isset($jsonObj['tables'])) {
-                    $tables = $jsonObj['tables'];
-                    if (!empty($tables['site_settings']) && is_array($tables['site_settings'])) {
+                if ($jsonObj) {
+                    $tables = isset($jsonObj['tables']) ? $jsonObj['tables'] : (isset($jsonObj['database']['tables']) ? $jsonObj['database']['tables'] : []);
+                    $rawSettings = !empty($tables['site_settings']) ? $tables['site_settings'] : (!empty($jsonObj['site_settings']) ? $jsonObj['site_settings'] : []);
+                    
+                    // Normalisasi apakah array list atau associative object
+                    $settingsList = [];
+                    if (is_array($rawSettings)) {
+                        $isAssoc = array_keys($rawSettings) !== range(0, count($rawSettings) - 1);
+                        if ($isAssoc) {
+                            foreach ($rawSettings as $k => $v) {
+                                $settingsList[] = ['id' => $k, 'value' => $v];
+                            }
+                        } else {
+                            $settingsList = $rawSettings;
+                        }
+                    }
+
+                    if (!empty($settingsList)) {
                         $stmtUpsert = $pdo->prepare("INSERT INTO `site_settings` (`id`, `value`, `updated_at`) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE `value`=VALUES(`value`), `updated_at`=NOW()");
-                        foreach ($tables['site_settings'] as $row) {
-                            $rowId = is_array($row) ? $row['id'] : null;
-                            $rowVal = is_array($row) ? (is_string($row['value']) ? $row['value'] : json_encode($row['value'], JSON_UNESCAPED_UNICODE)) : null;
+                        foreach ($settingsList as $row) {
+                            $rowId = is_array($row) ? (isset($row['id']) ? $row['id'] : null) : null;
+                            $rowVal = is_array($row) ? (isset($row['value']) ? (is_string($row['value']) ? $row['value'] : json_encode($row['value'], JSON_UNESCAPED_UNICODE)) : null) : null;
                             if ($rowId) {
                                 $stmtUpsert->execute([$rowId, $rowVal]);
                                 $restoredSettings++;
                             }
                         }
                     }
-                    if (!empty($tables['pendaftaran_spmb']) && is_array($tables['pendaftaran_spmb'])) {
+
+                    $rawSpmb = !empty($tables['pendaftaran_spmb']) ? $tables['pendaftaran_spmb'] : (!empty($jsonObj['pendaftaran_spmb']) ? $jsonObj['pendaftaran_spmb'] : []);
+                    if (!empty($rawSpmb) && is_array($rawSpmb)) {
                         try {
                             $pdo->exec("CREATE TABLE IF NOT EXISTS `pendaftaran_spmb` (
                                 `id` VARCHAR(191) NOT NULL PRIMARY KEY,
@@ -788,7 +815,7 @@ if ($action === 'restore_full') {
                             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
                             
                             $stmtSpmb = $pdo->prepare("INSERT INTO `pendaftaran_spmb` (`id`, `data`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `data`=VALUES(`data`)");
-                            foreach ($tables['pendaftaran_spmb'] as $sp) {
+                            foreach ($rawSpmb as $sp) {
                                 if (isset($sp['id'])) {
                                     $stmtSpmb->execute([$sp['id'], json_encode($sp, JSON_UNESCAPED_UNICODE)]);
                                     $restoredSpmb++;
@@ -961,6 +988,66 @@ if ($action === 'backup_status') {
         'zip_support' => class_exists('ZipArchive'),
         'message' => 'Sistem cadangan dan proteksi timpa ZIP aktif!'
     ]);
+    exit();
+}
+
+// -------------------------------------------------------------------------
+// 5. PEMBARUAN & SINKRONISASI SISTEM (GIT PULL & VERSION)
+// -------------------------------------------------------------------------
+if ($action === 'system_version') {
+    $currentGitCommit = 'unknown';
+    $currentGitDate = '';
+    $hasGit = false;
+
+    if (function_exists('exec')) {
+        $out = [];
+        $ret = 0;
+        @exec('git log -1 --format="%h - %s (%ci)" 2>&1', $out, $ret);
+        if ($ret === 0 && !empty($out[0])) {
+            $hasGit = true;
+            $currentGitCommit = $out[0];
+        }
+    }
+
+    echo json_encode([
+        'status' => 'success',
+        'has_git' => $hasGit,
+        'current_commit' => $currentGitCommit,
+        'php_version' => PHP_VERSION,
+        'server_software' => isset($_SERVER['SERVER_SOFTWARE']) ? $_SERVER['SERVER_SOFTWARE'] : 'Unknown',
+        'app_version' => '2.5.0-master'
+    ]);
+    exit();
+}
+
+if ($action === 'git_pull') {
+    if (!function_exists('exec') && !function_exists('shell_exec')) {
+        echo json_encode([
+            'status' => 'error',
+            'error' => 'Fitur eksekusi baris perintah (shell/exec) tidak diizinkan oleh konfigurasi PHP hosting ini. Silakan gunakan metode unduh dan ekstrak paket ZIP pembaruan.'
+        ]);
+        exit();
+    }
+
+    $output = [];
+    $returnVar = 0;
+    $cmd = 'git pull origin main 2>&1';
+    @exec($cmd, $output, $returnVar);
+    $outStr = implode("\n", $output);
+
+    if ($returnVar === 0) {
+        echo json_encode([
+            'status' => 'success',
+            'message' => 'Sinkronisasi Git Pull berhasil dilakukan!',
+            'output' => $outStr ?: 'Sudah versi paling mutakhir (Already up to date).'
+        ]);
+    } else {
+        echo json_encode([
+            'status' => 'warning',
+            'message' => 'Perintah Git Pull selesai dengan kode status: ' . $returnVar,
+            'output' => $outStr ?: 'Tidak ada respon teks dari Git.'
+        ]);
+    }
     exit();
 }
 

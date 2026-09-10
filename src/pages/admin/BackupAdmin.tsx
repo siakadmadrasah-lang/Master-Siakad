@@ -338,16 +338,18 @@ const BackupAdmin = () => {
     }
   };
 
-  // 3. RESTORE UNIVERSAL (.ZIP MAUPUN .JSON)
+  // 3. RESTORE UNIVERSAL (.ZIP, .JSON, MAUPUN .SQL)
   const handleUniversalImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const isZip = file.name.toLowerCase().endsWith('.zip');
-    const isJson = file.name.toLowerCase().endsWith('.json');
+    const lowerName = file.name.toLowerCase();
+    const isZip = lowerName.endsWith('.zip');
+    const isJson = lowerName.endsWith('.json');
+    const isSql = lowerName.endsWith('.sql');
 
-    if (!isZip && !isJson) {
-      showError('Format file tidak didukung. Mohon pilih file .zip atau .json');
+    if (!isZip && !isJson && !isSql) {
+      showError('Format berkas tidak didukung. Mohon pilih berkas .zip, .json, atau .sql');
       e.target.value = '';
       return;
     }
@@ -363,110 +365,229 @@ const BackupAdmin = () => {
     setRestoring(true);
     setRestoreProgress('Membaca berkas cadangan...');
 
+    // Helper untuk normalisasi struktur site_settings ke array { id, value }
+    const normalizeSettings = (raw: any): Array<{ id: string; value: any }> => {
+      if (!raw) return [];
+      if (Array.isArray(raw)) {
+        return raw
+          .filter((item: any) => item && (item.id || item.name))
+          .map((item: any) => ({
+            id: item.id || item.name,
+            value: typeof item.value === 'string' ? (() => {
+              try { return JSON.parse(item.value); } catch { return item.value; }
+            })() : item.value
+          }));
+      }
+      if (typeof raw === 'object') {
+        return Object.entries(raw).map(([key, val]) => ({
+          id: key,
+          value: typeof val === 'string' ? (() => {
+            try { return JSON.parse(val); } catch { return val; }
+          })() : val
+        }));
+      }
+      return [];
+    };
+
+    // Helper untuk menyimpan instan ke LocalStorage
+    const applyToLocalStorage = (settingsList: Array<{ id: string; value: any }>) => {
+      if (!settingsList || settingsList.length === 0) return;
+      try {
+        let currentMap: Record<string, any> = {};
+        const saved = localStorage.getItem('siakad_site_settings');
+        if (saved) {
+          try { currentMap = JSON.parse(saved); } catch { currentMap = {}; }
+        }
+        settingsList.forEach(s => {
+          if (s.id) {
+            currentMap[s.id] = s.value;
+          }
+        });
+        localStorage.setItem('siakad_site_settings', JSON.stringify(currentMap));
+
+        // Dispatch events agar seluruh komponen UI merender data baru seketika
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('siakad_settings_updated', { detail: { tableName: 'site_settings', payload: settingsList } }));
+          window.dispatchEvent(new Event('siakad_identitas_updated'));
+          window.dispatchEvent(new Event('siakad_madrasah_updated'));
+        }
+      } catch (err) {
+        console.warn('Gagal menyimpan cache lokal:', err);
+      }
+    };
+
     try {
       const apiUrl = getMysqlApiUrl();
+      let restoredSettingsCount = 0;
+      let restoredFilesCount = 0;
 
-      // JIKA BERKAS ZIP:
+      // ==========================================
+      // A. JIKA BERKAS ARSIP ZIP:
+      // ==========================================
       if (isZip) {
-        setRestoreProgress('Mengekstrak dan mengirim arsip ke server...');
+        setRestoreProgress('Menghubungi server untuk restorasi arsip...');
 
-        // 1. Coba restore langsung via API backend
+        // 1. Coba restore via backend dengan AbortController timeout 10 detik
         let backendRestored = false;
         try {
           const formData = new FormData();
           formData.append('backup_file', file);
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000);
+
           const res = await fetch(`${apiUrl}?action=restore_full`, {
             method: 'POST',
-            body: formData
+            body: formData,
+            signal: controller.signal
           });
+          clearTimeout(timeoutId);
 
           if (res.ok) {
-            const result = await res.json();
-            if (result.status === 'success') {
-              backendRestored = true;
-              showSuccess(result.message || 'Restorasi arsip ZIP ke server berhasil!');
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+              const result = await res.json();
+              if (result.status === 'success') {
+                backendRestored = true;
+                restoredSettingsCount = result.restored_settings || 0;
+                restoredFilesCount = result.restored_files || 0;
+              }
             }
           }
         } catch (backendErr) {
-          console.warn('Backend restore_full fallback to client parsing:', backendErr);
+          console.warn('Backend restore_full timeout/offline, melanjutkan ekstraksi browser:', backendErr);
         }
 
-        // 2. Client-side extraction via JSZip untuk menyegarkan cache dan memastikan data lokal sinkron
-        setRestoreProgress('Memproses database & berkas lampiran...');
+        // 2. Ekstraksi client-side via JSZip untuk memastikan data langsung aktif di browser
+        setRestoreProgress('Mengekstrak isi arsip ZIP...');
         const zip = await JSZip.loadAsync(file);
 
-        // Cari file database.json di dalam zip
+        // Cari file database.json atau file .json di dalam zip (bisa di root atau subfolder)
         let dbJsonStr: string | null = null;
-        const dbFile = zip.file('database.json');
-        if (dbFile) {
-          dbJsonStr = await dbFile.async('string');
-        } else {
-          // Cari file .json pertama di dalam zip jika namanya berbeda
-          const jsonEntry = Object.keys(zip.files).find(k => k.endsWith('.json') && !k.includes('manifest'));
-          if (jsonEntry) {
-            dbJsonStr = await zip.files[jsonEntry].async('string');
-          }
+        let sqlStr: string | null = null;
+
+        const fileKeys = Object.keys(zip.files);
+        const jsonKey = fileKeys.find(k => k.toLowerCase().endsWith('database.json')) ||
+                        fileKeys.find(k => k.toLowerCase().endsWith('.json') && !k.includes('manifest') && !k.includes('package'));
+        const sqlKey = fileKeys.find(k => k.toLowerCase().endsWith('.sql'));
+
+        if (jsonKey) {
+          dbJsonStr = await zip.files[jsonKey].async('string');
+        } else if (sqlKey) {
+          sqlStr = await zip.files[sqlKey].async('string');
         }
 
-        let restoredSettingsCount = 0;
-        let restoredFilesCount = 0;
+        let normalizedSettings: Array<{ id: string; value: any }> = [];
 
         if (dbJsonStr) {
-          const parsed = JSON.parse(dbJsonStr);
-          const tables = parsed.tables || parsed.database?.tables || {};
-          
-          if (tables.site_settings && Array.isArray(tables.site_settings)) {
-            setRestoreProgress(`Memulihkan ${tables.site_settings.length} modul pengaturan...`);
-            for (const row of tables.site_settings) {
-              if (row.id) {
-                await supabase.from('site_settings').upsert({
-                  id: row.id,
-                  value: row.value,
-                  updated_at: new Date().toISOString()
-                });
-                restoredSettingsCount++;
+          setRestoreProgress('Membaca struktur data JSON...');
+          try {
+            const parsed = JSON.parse(dbJsonStr);
+            const rawSettings = parsed.tables?.site_settings || 
+                                parsed.database?.tables?.site_settings || 
+                                parsed.site_settings || 
+                                (parsed.tables && !parsed.tables.site_settings ? parsed.tables : null);
+
+            normalizedSettings = normalizeSettings(rawSettings);
+
+            // Pulihkan pendaftaran_spmb jika ada
+            const rawSpmb = parsed.tables?.pendaftaran_spmb || parsed.database?.tables?.pendaftaran_spmb || parsed.pendaftaran_spmb;
+            if (Array.isArray(rawSpmb) && rawSpmb.length > 0) {
+              for (const row of rawSpmb) {
+                if (row.id) {
+                  supabase.from('pendaftaran_spmb').upsert(row).catch(() => {});
+                }
               }
             }
-          }
 
-          if (tables.pendaftaran_spmb && Array.isArray(tables.pendaftaran_spmb)) {
-            for (const row of tables.pendaftaran_spmb) {
-              if (row.id) {
-                await supabase.from('pendaftaran_spmb').upsert(row);
+            // Pulihkan snapshot localStorage jika disertakan dalam cadangan
+            if (parsed.local_storage_snapshots && typeof parsed.local_storage_snapshots === 'object') {
+              for (const [k, v] of Object.entries(parsed.local_storage_snapshots)) {
+                try {
+                  localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+                } catch { /* ignore */ }
               }
             }
+          } catch (jsonErr) {
+            console.warn('Gagal parsing JSON di dalam ZIP:', jsonErr);
           }
-
-          // Pulihkan local storage snapshot jika ada
-          if (parsed.local_storage_snapshots && typeof parsed.local_storage_snapshots === 'object') {
-            for (const [k, v] of Object.entries(parsed.local_storage_snapshots)) {
-              try {
-                localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
-              } catch (e) { void e; }
-            }
+        } else if (sqlStr) {
+          setRestoreProgress('Membaca query SQL cadangan...');
+          // Ekstrak INSERT INTO site_settings dari file SQL
+          const insertRegex = /INSERT\s+INTO\s+[`"']?site_settings[`"']?\s*\([^)]*\)\s*VALUES\s*\(([^)]+)\)/gi;
+          let match;
+          while ((match = insertRegex.exec(sqlStr)) !== null) {
+            try {
+              const rawValues = match[1].split(',').map(s => s.trim().replace(/^['"]|['"]$/g, ''));
+              if (rawValues.length >= 2) {
+                const id = rawValues[0];
+                let val: any = rawValues[1];
+                try { val = JSON.parse(val); } catch { /* keep string */ }
+                normalizedSettings.push({ id, value: val });
+              }
+            } catch { /* ignore bad sql line */ }
           }
         }
 
-        // Ekstrak dan unggah berkas dari folder uploads/ di dalam zip jika backend belum memprosesnya
-        if (!backendRestored) {
-          const uploadEntries = Object.keys(zip.files).filter(k => k.startsWith('uploads/') && !zip.files[k].dir);
-          if (uploadEntries.length > 0) {
-            setRestoreProgress(`Memulihkan ${uploadEntries.length} berkas foto & dokumen...`);
-            for (const entryName of uploadEntries) {
-              const fileName = entryName.replace(/^uploads\//, '');
-              if (!fileName || fileName.startsWith('.')) continue;
+        // Terapkan data ke LocalStorage seketika (0 ms)
+        if (normalizedSettings.length > 0) {
+          applyToLocalStorage(normalizedSettings);
+          restoredSettingsCount = Math.max(restoredSettingsCount, normalizedSettings.length);
 
-              const fileData = await zip.files[entryName].async('blob');
+          // Kirim batch ke backend (maksimal 20 baris per batch agar tidak timeout)
+          setRestoreProgress(`Menyinkronkan ${normalizedSettings.length} modul ke database...`);
+          const chunkSize = 20;
+          for (let i = 0; i < normalizedSettings.length; i += chunkSize) {
+            const chunk = normalizedSettings.slice(i, i + chunkSize);
+            await supabase.from('site_settings').upsert(chunk).catch(() => {});
+          }
+        }
+
+        // 3. Proses berkas gambar/dokumen di dalam zip jika backend belum memprosesnya
+        if (!backendRestored) {
+          const uploadEntries = fileKeys.filter(k => 
+            (k.startsWith('uploads/') || k.includes('/uploads/')) && 
+            !zip.files[k].dir
+          );
+
+          if (uploadEntries.length > 0) {
+            setRestoreProgress(`Memproses ${uploadEntries.length} berkas foto & lampiran...`);
+            
+            // Proses berkas dengan batas paralel
+            for (const entryName of uploadEntries) {
+              const cleanFileName = entryName.split('/').pop();
+              if (!cleanFileName || cleanFileName.startsWith('.')) continue;
+
               try {
+                const blob = await zip.files[entryName].async('blob');
+                
+                // Simpan cache lokal base64 untuk pratinjau cepat
+                if (blob.size < 1024 * 1024) { // < 1MB
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    try {
+                      localStorage.setItem(`siakad_file_${cleanFileName}`, reader.result as string);
+                      localStorage.setItem(`siakad_file_uploads/${cleanFileName}`, reader.result as string);
+                    } catch { /* ignore quota */ }
+                  };
+                  reader.readAsDataURL(blob);
+                }
+
+                // Coba upload ke server dengan timeout 3 detik per file
                 const uploadFormData = new FormData();
-                uploadFormData.append('file', fileData, fileName);
+                uploadFormData.append('file', blob, cleanFileName);
+                const fileCtrl = new AbortController();
+                const fileTimeout = setTimeout(() => fileCtrl.abort(), 3500);
+                
                 await fetch(`${apiUrl}?action=upload`, {
                   method: 'POST',
-                  body: uploadFormData
-                });
+                  body: uploadFormData,
+                  signal: fileCtrl.signal
+                }).catch(() => {});
+                clearTimeout(fileTimeout);
+
                 restoredFilesCount++;
-              } catch (err) {
-                console.warn(`Gagal restore file ${fileName}:`, err);
+              } catch (fileErr) {
+                console.warn('Gagal memproses file:', entryName, fileErr);
               }
             }
           }
@@ -474,53 +595,93 @@ const BackupAdmin = () => {
 
         showSuccess(`Restorasi Lengkap Berhasil! Dipulihkan: ${restoredSettingsCount} modul pengaturan dan ${restoredFilesCount} berkas media.`);
         fetchHostingStatus();
-        setTimeout(() => window.location.reload(), 2000);
+        setTimeout(() => window.location.reload(), 1500);
         return;
       }
 
-      // JIKA BERKAS JSON:
+      // ==========================================
+      // B. JIKA BERKAS CADANGAN JSON:
+      // ==========================================
       if (isJson) {
-        setRestoreProgress('Membaca dan memvalidasi file JSON...');
+        setRestoreProgress('Membaca berkas JSON...');
         const text = await file.text();
         const json = JSON.parse(text);
-        
-        const tables = json.tables || json.database?.tables || {};
-        if (!tables.site_settings) {
-          throw new Error("Format berkas backup JSON tidak memiliki struktur site_settings yang valid.");
+
+        const rawSettings = json.tables?.site_settings || 
+                            json.database?.tables?.site_settings || 
+                            json.site_settings || 
+                            (json.tables && !json.tables.site_settings ? json.tables : null) ||
+                            json;
+
+        const normalizedSettings = normalizeSettings(rawSettings);
+
+        if (normalizedSettings.length === 0) {
+          throw new Error("Format berkas backup JSON tidak memiliki data modul/site_settings yang dapat dikenali.");
         }
 
-        setRestoreProgress('Memulihkan data site_settings...');
-        let count = 0;
-        for (const row of tables.site_settings) {
-          if (row.id) {
-            await supabase.from('site_settings').upsert({ 
-              id: row.id, 
-              value: row.value, 
-              updated_at: new Date().toISOString() 
-            });
-            count++;
+        // Terapkan langsung ke LocalStorage
+        applyToLocalStorage(normalizedSettings);
+
+        // Kirim sinkronisasi batch
+        setRestoreProgress(`Menyinkronkan ${normalizedSettings.length} modul pengaturan...`);
+        const chunkSize = 20;
+        for (let i = 0; i < normalizedSettings.length; i += chunkSize) {
+          const chunk = normalizedSettings.slice(i, i + chunkSize);
+          await supabase.from('site_settings').upsert(chunk).catch(() => {});
+        }
+
+        // Pulihkan pendaftaran_spmb jika ada
+        const rawSpmb = json.tables?.pendaftaran_spmb || json.database?.tables?.pendaftaran_spmb || json.pendaftaran_spmb;
+        if (Array.isArray(rawSpmb)) {
+          for (const row of rawSpmb) {
+            if (row.id) supabase.from('pendaftaran_spmb').upsert(row).catch(() => {});
           }
         }
 
-        if (tables.pendaftaran_spmb && Array.isArray(tables.pendaftaran_spmb)) {
-          for (const row of tables.pendaftaran_spmb) {
-            if (row.id) {
-              await supabase.from('pendaftaran_spmb').upsert(row);
-            }
-          }
-        }
-
-        showSuccess(`Data JSON berhasil dipulihkan! (${count} modul pengaturan). Halaman akan disegarkan...`);
+        showSuccess(`Data JSON berhasil dipulihkan! (${normalizedSettings.length} modul pengaturan). Menyegarkan halaman...`);
         fetchHostingStatus();
-        setTimeout(() => window.location.reload(), 2000);
+        setTimeout(() => window.location.reload(), 1500);
+        return;
+      }
+
+      // ==========================================
+      // C. JIKA BERKAS SQL (.SQL):
+      // ==========================================
+      if (isSql) {
+        setRestoreProgress('Membaca skrip SQL cadangan...');
+        const text = await file.text();
+        const normalizedSettings: Array<{ id: string; value: any }> = [];
+
+        const insertRegex = /INSERT\s+INTO\s+[`"']?site_settings[`"']?\s*\([^)]*\)\s*VALUES\s*\(([^)]+)\)/gi;
+        let match;
+        while ((match = insertRegex.exec(text)) !== null) {
+          try {
+            const rawValues = match[1].split(',').map(s => s.trim().replace(/^['"]|['"]$/g, ''));
+            if (rawValues.length >= 2) {
+              const id = rawValues[0];
+              let val: any = rawValues[1];
+              try { val = JSON.parse(val); } catch { /* keep string */ }
+              normalizedSettings.push({ id, value: val });
+            }
+          } catch { /* ignore */ }
+        }
+
+        if (normalizedSettings.length === 0) {
+          throw new Error('Tidak ditemukan perintah INSERT INTO site_settings dalam file SQL.');
+        }
+
+        applyToLocalStorage(normalizedSettings);
+        showSuccess(`Data SQL berhasil dipulihkan! (${normalizedSettings.length} data ditemukan).`);
+        setTimeout(() => window.location.reload(), 1500);
+        return;
       }
     } catch (error: any) {
-      console.error('Import error:', error);
-      showError('Gagal memulihkan data: ' + error.message);
+      console.error('Restore universal error:', error);
+      showError('Gagal memulihkan data: ' + (error.message || 'Terjadi kesalahan sistem'));
     } finally {
       setRestoring(false);
       setRestoreProgress('');
-      e.target.value = '';
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -690,7 +851,7 @@ const BackupAdmin = () => {
               <div className="relative">
                 <input 
                   type="file" 
-                  accept=".zip,.json" 
+                  accept=".zip,.json,.sql" 
                   onChange={handleUniversalImport}
                   disabled={restoring}
                   className="hidden" 
@@ -714,10 +875,10 @@ const BackupAdmin = () => {
                         <Upload className="w-6 h-6" />
                       </div>
                       <span className="text-xs font-extrabold text-slate-800">
-                        Klik untuk Pilih File Cadangan (.ZIP atau .JSON)
+                        Klik untuk Pilih File Cadangan (.ZIP, .JSON, atau .SQL)
                       </span>
                       <span className="text-[11px] text-slate-500">
-                        Mendukung arsip lengkap ZIP (database + gambar) & JSON
+                        Mendukung arsip lengkap ZIP (database + gambar), JSON, & SQL
                       </span>
                     </div>
                   )}

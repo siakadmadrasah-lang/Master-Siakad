@@ -13,7 +13,7 @@ import {
   Database, UserCheck, Printer, FileSpreadsheet, Presentation, Contact2,
   PenTool, FileBadge, Wallet, Receipt, History, UserCheck2, ClipboardCheck,
   Library, BookCopy, ArrowLeftRight, Sparkles, ImageIcon, Layout, Check, Plus, AlertTriangle, ShieldAlert, Archive, Compass,
-  Globe, ExternalLink, ShieldCheck, Trophy, Award, BarChart3, HeartHandshake
+  Globe, ExternalLink, ShieldCheck, Trophy, Award, BarChart3, HeartHandshake, GitPullRequest
 } from 'lucide-react';
 import { showSuccess, showError } from '@/utils/toast';
 import {
@@ -166,6 +166,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title }) => {
         { icon: Printer, label: 'Pengaturan Cetak', path: '/admin/print-settings' },
         { icon: Key, label: 'Konfigurasi API', path: '/admin/api-config' },
         { icon: Database, label: 'Backup & Restore', path: '/admin/backup' },
+        { icon: GitPullRequest, label: 'Pembaruan Sistem', path: '/admin/update' },
       ]
     }
   ];
