@@ -2,10 +2,22 @@
 // ====================================================================
 // KONFIGURASI DATABASE MYSQL / MARIADB HOSTING (PLESK / CPANEL / DLL)
 // ====================================================================
-// Silakan sesuaikan nama database, username, dan password sesuai dengan
-// yang Anda buat di menu Database Plesk / cPanel hosting Anda.
+// PERLINDUNGAN TIMPA ZIP:
+// Jika file db_config.local.php sudah ada, konfigurasi lokal tersebut
+// akan diprioritaskan sehingga saat Anda menimpa/extract file ZIP baru
+// di cPanel atau Plesk, kredensial dan koneksi database TIDAK AKAN HILANG.
 
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'masbagoes_siakad');
-define('DB_USER', 'masbagoes_siakad');
-define('DB_PASS', 'masbagus15');
+if (file_exists(__DIR__ . '/db_config.local.php')) {
+    include_once __DIR__ . '/db_config.local.php';
+}
+
+if (!defined('DB_HOST') && file_exists(__DIR__ . '/uploads/.db_config_backup.php')) {
+    include_once __DIR__ . '/uploads/.db_config_backup.php';
+}
+
+// Nilai default hosting (hanya berlaku jika belum didefinisikan sebelumnya)
+if (!defined('DB_HOST')) define('DB_HOST', 'localhost');
+if (!defined('DB_NAME')) define('DB_NAME', 'masbagoes_siakad');
+if (!defined('DB_USER')) define('DB_USER', 'masbagoes_siakad');
+if (!defined('DB_PASS')) define('DB_PASS', 'masbagus15');
+

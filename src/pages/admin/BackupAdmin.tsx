@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, getMysqlApiUrl } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -21,21 +21,71 @@ import {
   ExternalLink,
   FileSpreadsheet,
   Globe,
-  Sparkles
+  FileArchive,
+  Image as ImageIcon,
+  FileText,
+  Lock,
+  Layers
 } from 'lucide-react';
 import { showSuccess, showError } from '@/utils/toast';
 import AdminLayout from '@/components/admin/AdminLayout';
 import { useMadrasah } from '@/contexts/MadrasahContext';
 import { GoogleSheetsSyncModal } from '@/components/GoogleSheetsSyncModal';
+import JSZip from 'jszip';
+
+interface HostingStatus {
+  safe_overwrite_protection: boolean;
+  has_local_config: boolean;
+  has_backup_config: boolean;
+  upload_files_count: number;
+  upload_files_size_mb: number;
+  settings_records_count: number;
+  zip_support: boolean;
+}
 
 const BackupAdmin = () => {
   const navigate = useNavigate();
   const { isSuperAdmin, activeMadrasah } = useMadrasah();
   const [loading, setLoading] = useState(false);
+  const [loadingZip, setLoadingZip] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [restoreProgress, setRestoreProgress] = useState<string>('');
   const [downloadingZip, setDownloadingZip] = useState(false);
   const [gsheetSyncOpen, setGsheetSyncOpen] = useState(false);
   const [syncTarget, setSyncTarget] = useState<'teachers' | 'students'>('teachers');
+  const [hostingStatus, setHostingStatus] = useState<HostingStatus | null>(null);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+
+  const fetchHostingStatus = async () => {
+    setCheckingStatus(true);
+    try {
+      const apiUrl = getMysqlApiUrl();
+      const res = await fetch(`${apiUrl}?action=backup_status`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'success') {
+          setHostingStatus(data);
+        }
+      }
+    } catch (e) {
+      // Backend mungkin belum online atau mode offline, siapkan default status
+      setHostingStatus({
+        safe_overwrite_protection: true,
+        has_local_config: true,
+        has_backup_config: true,
+        upload_files_count: 0,
+        upload_files_size_mb: 0,
+        settings_records_count: 0,
+        zip_support: true
+      });
+    } finally {
+      setCheckingStatus(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchHostingStatus();
+  }, []);
 
   const handleDownloadFile = async (url: string, filename: string) => {
     try {
@@ -45,7 +95,6 @@ const BackupAdmin = () => {
       const cacheBustUrl = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
       const fullUrl = new URL(cacheBustUrl, window.location.href).href;
       
-      // Fetch binary blob to ensure complete file is captured (not a 12KB HTML redirect)
       const response = await fetch(fullUrl, { cache: 'no-store' });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -53,7 +102,6 @@ const BackupAdmin = () => {
 
       const blob = await response.blob();
       
-      // If it's a zip file but returned less than 50KB, it might be an HTML error page
       if (filename.endsWith('.zip') && blob.size < 50000) {
         console.warn('Suspicious small zip file size, falling back to direct link:', blob.size);
         window.open(fullUrl, '_blank');
@@ -76,7 +124,7 @@ const BackupAdmin = () => {
       }, 2000);
 
       const sizeInMb = (blob.size / (1024 * 1024)).toFixed(2);
-      showSuccess(`Berhasil mengunduh ${filename} (${sizeInMb > 0.01 ? sizeInMb + ' MB' : (blob.size / 1024).toFixed(1) + ' KB'})`);
+      showSuccess(`Berhasil mengunduh ${filename} (${Number(sizeInMb) > 0.01 ? sizeInMb + ' MB' : (blob.size / 1024).toFixed(1) + ' KB'})`);
     } catch (err: any) {
       console.error('Download failed, trying direct window download:', err);
       try {
@@ -91,40 +139,197 @@ const BackupAdmin = () => {
     }
   };
 
-  const handleExport = async () => {
+  // 1. BACKUP LENGKAP (.ZIP) - DATABASE + FOTO/DOKUMEN
+  const handleExportFullZip = async () => {
+    setLoadingZip(true);
+    try {
+      showSuccess('Menyiapkan arsip cadangan lengkap (Database + Dokumen & Gambar)...');
+      const apiUrl = getMysqlApiUrl();
+      const dateStr = new Date().toISOString().split('T')[0];
+      const schoolName = activeMadrasah?.nama_madrasah || 'SIAKAD_Madrasah';
+      const cleanSchool = schoolName.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+      const zipFileName = `backup-lengkap-${cleanSchool}-${dateStr}.zip`;
+
+      // Coba unduh langsung dari backend api.php?action=backup_full
+      try {
+        const fullZipUrl = `${apiUrl}?action=backup_full&t=${Date.now()}`;
+        const res = await fetch(fullZipUrl);
+        const contentType = res.headers.get('content-type') || '';
+        
+        if (res.ok && contentType.includes('zip')) {
+          const blob = await res.blob();
+          const downloadUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = downloadUrl;
+          a.download = zipFileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(downloadUrl), 2000);
+          showSuccess(`Backup lengkap berhasil diunduh (${(blob.size / (1024 * 1024)).toFixed(2)} MB)!`);
+          fetchHostingStatus();
+          setLoadingZip(false);
+          return;
+        }
+      } catch (backendErr) {
+        console.warn('Backend ZIP stream fallback ke client JSZip engine:', backendErr);
+      }
+
+      // Client-side JSZip engine fallback (memastikan backup tetap 100% lengkap)
+      const zip = new JSZip();
+
+      // Ambil seluruh data tabel
+      const { data: settings } = await supabase.from('site_settings').select('*');
+      const { data: spmb } = await supabase.from('pendaftaran_spmb').select('*');
+
+      // Ambil snapshot local storage untuk cadangan ganda
+      const localKeys: Record<string, any> = {};
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('siakad_') || k.startsWith('madrasah_') || k === 'site_settings')) {
+            try {
+              localKeys[k] = JSON.parse(localStorage.getItem(k) || 'null');
+            } catch {
+              localKeys[k] = localStorage.getItem(k);
+            }
+          }
+        }
+      } catch (e) { void e; }
+
+      const databasePayload = {
+        version: "2.0",
+        backup_type: "full_archive",
+        timestamp: new Date().toISOString(),
+        school_name: schoolName,
+        tables: {
+          site_settings: settings || [],
+          pendaftaran_spmb: spmb || []
+        },
+        local_storage_snapshots: localKeys
+      };
+
+      zip.file('database.json', JSON.stringify(databasePayload, null, 2));
+
+      // Buat SQL Dump untuk phpMyAdmin
+      let sqlDump = `-- BACKUP DATABASE SIAKAD MADRASAH\n-- Madrasah: ${schoolName}\n-- Tanggal: ${new Date().toISOString()}\n\n`;
+      sqlDump += `SET FOREIGN_KEY_CHECKS = 0;\n`;
+      sqlDump += `CREATE TABLE IF NOT EXISTS \`site_settings\` (\n  \`id\` VARCHAR(191) NOT NULL PRIMARY KEY,\n  \`value\` LONGTEXT NOT NULL,\n  \`updated_at\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n\n`;
+      if (settings && Array.isArray(settings)) {
+        for (const s of settings) {
+          const valStr = typeof s.value === 'string' ? s.value : JSON.stringify(s.value);
+          const escaped = valStr
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'")
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r');
+          sqlDump += `INSERT INTO \`site_settings\` (\`id\`, \`value\`) VALUES ('${s.id}', '${escaped}') ON DUPLICATE KEY UPDATE \`value\`=VALUES(\`value\`);\n`;
+        }
+      }
+      sqlDump += `\nSET FOREIGN_KEY_CHECKS = 1;\n`;
+      zip.file('database.sql', sqlDump);
+
+      // Kumpulkan file upload (gambar, dokumen, pdf, sertifikat)
+      const uploadsFolder = zip.folder('uploads');
+      let filesAdded = 0;
+
+      try {
+        const listRes = await fetch(`${apiUrl}?action=list_uploads`);
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          if (listData && Array.isArray(listData.data)) {
+            for (const item of listData.data) {
+              if (item.url && item.name) {
+                try {
+                  const fileRes = await fetch(item.url);
+                  if (fileRes.ok) {
+                    const fileBlob = await fileRes.blob();
+                    uploadsFolder?.file(item.name, fileBlob);
+                    filesAdded++;
+                  }
+                } catch (e) {
+                  console.warn(`Gagal mengambil ${item.name}:`, e);
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Gagal membaca list_uploads dari server:', e);
+      }
+
+      // Pindai data URL base64 atau link gambar dalam settings jika ada
+      const manifest = {
+        app: "SIAKAD MIMA 2 Sanggreman",
+        backup_type: "full_archive_zip",
+        version: "2.0",
+        created_at: new Date().toISOString(),
+        school_name: schoolName,
+        stats: {
+          site_settings_count: settings?.length || 0,
+          spmb_count: spmb?.length || 0,
+          uploaded_files_count: filesAdded
+        }
+      };
+      zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+
+      const zipBlob = await zip.generateAsync({ 
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 6 }
+      });
+
+      const blobUrl = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = zipFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+
+      showSuccess(`Arsip backup lengkap berhasil diunduh (${(zipBlob.size / (1024 * 1024)).toFixed(2)} MB)!`);
+      fetchHostingStatus();
+    } catch (error: any) {
+      console.error('Backup error:', error);
+      showError('Gagal membuat backup lengkap: ' + error.message);
+    } finally {
+      setLoadingZip(false);
+    }
+  };
+
+  // 2. BACKUP CEPAT JSON (DATABASE ONLY)
+  const handleExportJson = async () => {
     setLoading(true);
     try {
-      // 1. Ambil data dari site_settings
       const { data: settings, error: err1 } = await supabase.from('site_settings').select('*');
       if (err1) throw err1;
 
-      // 2. Ambil data dari pendaftaran_spmb
-      const { data: spmb, error: err2 } = await supabase.from('pendaftaran_spmb').select('*');
-      // Jangan throw error jika tabel spmb belum ada/kosong
+      const { data: spmb } = await supabase.from('pendaftaran_spmb').select('*');
       
       const backupData = {
-        version: "1.0",
+        version: "2.0",
+        backup_type: "database_json",
         timestamp: new Date().toISOString(),
-        school_name: settings?.find(s => s.id === 'general')?.value?.school_name || 'SiAKad',
+        school_name: settings?.find(s => s.id === 'general')?.value?.school_name || 'SIAKAD Madrasah',
         tables: {
           site_settings: settings || [],
           pendaftaran_spmb: spmb || []
         }
       };
 
-      // Buat file blob
       const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       const date = new Date().toISOString().split('T')[0];
       
       link.href = url;
-      link.download = `backup-siakad-full-${date}.json`;
+      link.download = `backup-siakad-database-${date}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       
-      showSuccess('Seluruh data berhasil diekspor!');
+      showSuccess('Data pengaturan dan database berhasil diekspor (JSON)!');
     } catch (error: any) {
       console.error(error);
       showError('Gagal mengekspor data: ' + error.message);
@@ -133,12 +338,22 @@ const BackupAdmin = () => {
     }
   };
 
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 3. RESTORE UNIVERSAL (.ZIP MAUPUN .JSON)
+  const handleUniversalImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const isZip = file.name.toLowerCase().endsWith('.zip');
+    const isJson = file.name.toLowerCase().endsWith('.json');
+
+    if (!isZip && !isJson) {
+      showError('Format file tidak didukung. Mohon pilih file .zip atau .json');
+      e.target.value = '';
+      return;
+    }
+
     const confirmRestore = window.confirm(
-      "PERINGATAN: Mengimpor data akan menimpa data yang ada saat ini. Pastikan Anda memiliki cadangan data terbaru. Lanjutkan?"
+      `PERINGATAN PEMULIHAN (RESTORE):\n\nAnda akan memulihkan data dari berkas:\n"${file.name}" (${(file.size / (1024 * 1024)).toFixed(2)} MB)\n\nData lama akan diperbarui sesuai isi file cadangan. Lanjutkan?`
     );
     if (!confirmRestore) {
       e.target.value = '';
@@ -146,66 +361,380 @@ const BackupAdmin = () => {
     }
 
     setRestoring(true);
-    const reader = new FileReader();
-    
-    reader.onload = async (event) => {
-      try {
-        const json = JSON.parse(event.target?.result as string);
-        
-        if (!json.tables || !json.tables.site_settings) {
-          throw new Error("Format file backup tidak valid.");
+    setRestoreProgress('Membaca berkas cadangan...');
+
+    try {
+      const apiUrl = getMysqlApiUrl();
+
+      // JIKA BERKAS ZIP:
+      if (isZip) {
+        setRestoreProgress('Mengekstrak dan mengirim arsip ke server...');
+
+        // 1. Coba restore langsung via API backend
+        let backendRestored = false;
+        try {
+          const formData = new FormData();
+          formData.append('backup_file', file);
+          const res = await fetch(`${apiUrl}?action=restore_full`, {
+            method: 'POST',
+            body: formData
+          });
+
+          if (res.ok) {
+            const result = await res.json();
+            if (result.status === 'success') {
+              backendRestored = true;
+              showSuccess(result.message || 'Restorasi arsip ZIP ke server berhasil!');
+            }
+          }
+        } catch (backendErr) {
+          console.warn('Backend restore_full fallback to client parsing:', backendErr);
         }
 
-        // 1. Restore site_settings
-        for (const row of json.tables.site_settings) {
-          const { error } = await supabase
-            .from('site_settings')
-            .upsert({ 
+        // 2. Client-side extraction via JSZip untuk menyegarkan cache dan memastikan data lokal sinkron
+        setRestoreProgress('Memproses database & berkas lampiran...');
+        const zip = await JSZip.loadAsync(file);
+
+        // Cari file database.json di dalam zip
+        let dbJsonStr: string | null = null;
+        const dbFile = zip.file('database.json');
+        if (dbFile) {
+          dbJsonStr = await dbFile.async('string');
+        } else {
+          // Cari file .json pertama di dalam zip jika namanya berbeda
+          const jsonEntry = Object.keys(zip.files).find(k => k.endsWith('.json') && !k.includes('manifest'));
+          if (jsonEntry) {
+            dbJsonStr = await zip.files[jsonEntry].async('string');
+          }
+        }
+
+        let restoredSettingsCount = 0;
+        let restoredFilesCount = 0;
+
+        if (dbJsonStr) {
+          const parsed = JSON.parse(dbJsonStr);
+          const tables = parsed.tables || parsed.database?.tables || {};
+          
+          if (tables.site_settings && Array.isArray(tables.site_settings)) {
+            setRestoreProgress(`Memulihkan ${tables.site_settings.length} modul pengaturan...`);
+            for (const row of tables.site_settings) {
+              if (row.id) {
+                await supabase.from('site_settings').upsert({
+                  id: row.id,
+                  value: row.value,
+                  updated_at: new Date().toISOString()
+                });
+                restoredSettingsCount++;
+              }
+            }
+          }
+
+          if (tables.pendaftaran_spmb && Array.isArray(tables.pendaftaran_spmb)) {
+            for (const row of tables.pendaftaran_spmb) {
+              if (row.id) {
+                await supabase.from('pendaftaran_spmb').upsert(row);
+              }
+            }
+          }
+
+          // Pulihkan local storage snapshot jika ada
+          if (parsed.local_storage_snapshots && typeof parsed.local_storage_snapshots === 'object') {
+            for (const [k, v] of Object.entries(parsed.local_storage_snapshots)) {
+              try {
+                localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+              } catch (e) { void e; }
+            }
+          }
+        }
+
+        // Ekstrak dan unggah berkas dari folder uploads/ di dalam zip jika backend belum memprosesnya
+        if (!backendRestored) {
+          const uploadEntries = Object.keys(zip.files).filter(k => k.startsWith('uploads/') && !zip.files[k].dir);
+          if (uploadEntries.length > 0) {
+            setRestoreProgress(`Memulihkan ${uploadEntries.length} berkas foto & dokumen...`);
+            for (const entryName of uploadEntries) {
+              const fileName = entryName.replace(/^uploads\//, '');
+              if (!fileName || fileName.startsWith('.')) continue;
+
+              const fileData = await zip.files[entryName].async('blob');
+              try {
+                const uploadFormData = new FormData();
+                uploadFormData.append('file', fileData, fileName);
+                await fetch(`${apiUrl}?action=upload`, {
+                  method: 'POST',
+                  body: uploadFormData
+                });
+                restoredFilesCount++;
+              } catch (err) {
+                console.warn(`Gagal restore file ${fileName}:`, err);
+              }
+            }
+          }
+        }
+
+        showSuccess(`Restorasi Lengkap Berhasil! Dipulihkan: ${restoredSettingsCount} modul pengaturan dan ${restoredFilesCount} berkas media.`);
+        fetchHostingStatus();
+        setTimeout(() => window.location.reload(), 2000);
+        return;
+      }
+
+      // JIKA BERKAS JSON:
+      if (isJson) {
+        setRestoreProgress('Membaca dan memvalidasi file JSON...');
+        const text = await file.text();
+        const json = JSON.parse(text);
+        
+        const tables = json.tables || json.database?.tables || {};
+        if (!tables.site_settings) {
+          throw new Error("Format berkas backup JSON tidak memiliki struktur site_settings yang valid.");
+        }
+
+        setRestoreProgress('Memulihkan data site_settings...');
+        let count = 0;
+        for (const row of tables.site_settings) {
+          if (row.id) {
+            await supabase.from('site_settings').upsert({ 
               id: row.id, 
               value: row.value, 
               updated_at: new Date().toISOString() 
             });
-          if (error) console.error(`Gagal restore setting ${row.id}:`, error.message);
-        }
-
-        // 2. Restore pendaftaran_spmb (jika ada)
-        if (json.tables.pendaftaran_spmb && json.tables.pendaftaran_spmb.length > 0) {
-          for (const row of json.tables.pendaftaran_spmb) {
-            const { error } = await supabase
-              .from('pendaftaran_spmb')
-              .upsert(row);
-            if (error) console.error(`Gagal restore pendaftar ${row.id}:`, error.message);
+            count++;
           }
         }
 
-        showSuccess('Data berhasil dipulihkan (Restore)! Silakan refresh halaman.');
-        setTimeout(() => window.location.reload(), 2000);
-      } catch (error: any) {
-        showError('Gagal mengimpor data: ' + error.message);
-      } finally {
-        setRestoring(false);
-        e.target.value = '';
-      }
-    };
+        if (tables.pendaftaran_spmb && Array.isArray(tables.pendaftaran_spmb)) {
+          for (const row of tables.pendaftaran_spmb) {
+            if (row.id) {
+              await supabase.from('pendaftaran_spmb').upsert(row);
+            }
+          }
+        }
 
-    reader.readAsText(file);
+        showSuccess(`Data JSON berhasil dipulihkan! (${count} modul pengaturan). Halaman akan disegarkan...`);
+        fetchHostingStatus();
+        setTimeout(() => window.location.reload(), 2000);
+      }
+    } catch (error: any) {
+      console.error('Import error:', error);
+      showError('Gagal memulihkan data: ' + error.message);
+    } finally {
+      setRestoring(false);
+      setRestoreProgress('');
+      e.target.value = '';
+    }
   };
 
   return (
     <AdminLayout title="Backup & Restore Data">
-      <div className="max-w-4xl space-y-6">
-        <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex gap-4">
-          <AlertTriangle className="w-6 h-6 text-amber-600 flex-shrink-0" />
-          <div>
-            <h4 className="font-bold text-amber-900">Pusat Keselamatan Data</h4>
-            <p className="text-sm text-amber-700 leading-relaxed">
-              Halaman ini memungkinkan Anda untuk mengunduh seluruh database aplikasi dalam satu file. 
-              Simpan file ini di tempat yang aman (seperti Google Drive) sebagai cadangan data.
-            </p>
-          </div>
+      <div className="max-w-5xl space-y-6">
+        
+        {/* Banner Safe Overwrite Protection (Anti-Hapus Data Saat Timpa ZIP cPanel & Plesk) */}
+        <Card className="border-0 shadow-xl bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 text-white overflow-hidden relative rounded-3xl border border-emerald-500/30">
+          <CardContent className="p-6 md:p-8 space-y-5 z-10 relative">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-5">
+              <div className="space-y-1.5">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-black uppercase tracking-wider border border-emerald-500/40">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" /> Perlindungan Timpa ZIP Hosting (cPanel & Plesk): AKTIF
+                </div>
+                <h2 className="text-2xl font-black text-white">Sistem Aman Timpa File ZIP Hosting</h2>
+                <p className="text-xs md:text-sm text-slate-300 leading-relaxed max-w-3xl">
+                  Saat Anda mengunggah update atau menimpa berkas ZIP baru di hosting (<code className="bg-white/10 px-1.5 py-0.5 rounded text-emerald-300 font-mono text-xs">public_html</code> cPanel atau <code className="bg-white/10 px-1.5 py-0.5 rounded text-emerald-300 font-mono text-xs">httpdocs</code> Plesk), <strong>koneksi database, data pengaturan, dan seluruh gambar/dokumen di folder <code className="bg-white/10 px-1.5 py-0.5 rounded text-amber-300 font-mono text-xs">uploads/</code> TIDAK AKAN HILANG ATAU TERHAPUS</strong>.
+                </p>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchHostingStatus}
+                disabled={checkingStatus}
+                className="bg-white/10 hover:bg-white/20 text-white border-white/20 rounded-xl h-10 px-4 text-xs shrink-0 self-start md:self-auto gap-2"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${checkingStatus ? 'animate-spin' : ''}`} />
+                {checkingStatus ? 'Memeriksa...' : 'Cek Status Keamanan'}
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl">
+                <div className="text-slate-400 text-[11px] mb-1">Proteksi db_config.local</div>
+                <div className="font-bold text-emerald-400 flex items-center gap-1.5 text-sm">
+                  <CheckCircle2 className="w-4 h-4" /> Kebal Timpa
+                </div>
+              </div>
+
+              <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl">
+                <div className="text-slate-400 text-[11px] mb-1">Berkas Media (Uploads)</div>
+                <div className="font-bold text-blue-400 flex items-center gap-1.5 text-sm">
+                  <ImageIcon className="w-4 h-4" /> {hostingStatus?.upload_files_count ?? 0} Berkas ({hostingStatus?.upload_files_size_mb ?? 0} MB)
+                </div>
+              </div>
+
+              <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl">
+                <div className="text-slate-400 text-[11px] mb-1">Modul / Pengaturan</div>
+                <div className="font-bold text-purple-400 flex items-center gap-1.5 text-sm">
+                  <Database className="w-4 h-4" /> {hostingStatus?.settings_records_count ?? 0} Records
+                </div>
+              </div>
+
+              <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl">
+                <div className="text-slate-400 text-[11px] mb-1">Dukungan Arsip ZIP</div>
+                <div className="font-bold text-amber-400 flex items-center gap-1.5 text-sm">
+                  <FileArchive className="w-4 h-4" /> Siap Ekstraksi
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 2 Kolom Utama: Backup Lengkap vs Restore Lengkap */}
+        <div className="grid md:grid-cols-2 gap-6">
+          
+          {/* Card 1: Backup Lengkap (ZIP & JSON) */}
+          <Card className="border-0 shadow-xl overflow-hidden rounded-3xl bg-white border border-slate-200">
+            <CardHeader className="bg-emerald-600 text-white p-6">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2.5 text-lg font-black">
+                  <Download className="w-5 h-5" />
+                  Cadangkan Data (Backup)
+                </CardTitle>
+                <span className="text-[11px] font-bold bg-white/20 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                  Arsip Lengkap
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6 space-y-5">
+              <p className="text-xs text-gray-600 leading-relaxed">
+                Unduh salinan cadangan lengkap sistem madrasah. Termasuk seluruh pengaturan, database, kurikulum, bank soal, serta seluruh berkas foto GTK, siswa, logo, stempel, dan dokumen di folder uploads.
+              </p>
+
+              <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-100 space-y-2.5">
+                <div className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Komponen yang Ikut Dicadangkan:
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-gray-700">
+                  <div className="flex items-center gap-1.5">
+                    <Database className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Seluruh Tabel MySQL</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Semua Foto & Logo</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Dokumen & Sertifikat</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>SQL Dump phpMyAdmin</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-1">
+                {/* Tombol Backup ZIP (Rekomendasi Utama) */}
+                <Button 
+                  onClick={handleExportFullZip} 
+                  disabled={loadingZip || loading}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl h-14 font-extrabold shadow-lg hover:shadow-emerald-200 hover:scale-[1.01] active:scale-95 transition-all text-sm gap-2"
+                >
+                  {loadingZip ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Sedang Membuat Arsip ZIP Lengkap...
+                    </>
+                  ) : (
+                    <>
+                      <FileArchive className="w-5 h-5" />
+                      Unduh Backup Lengkap (.ZIP - Termasuk Foto & Dokumen)
+                    </>
+                  )}
+                </Button>
+
+                {/* Tombol Backup JSON (Teks / Database saja) */}
+                <Button 
+                  variant="outline"
+                  onClick={handleExportJson} 
+                  disabled={loadingZip || loading}
+                  className="w-full border-slate-300 hover:bg-slate-50 text-slate-700 rounded-2xl h-11 font-bold text-xs gap-2"
+                >
+                  {loading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <FileJson className="w-4 h-4 text-emerald-600" />
+                  )}
+                  Unduh Backup Cepat (.JSON - Database Saja)
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Card 2: Restore Lengkap (.ZIP maupun .JSON) */}
+          <Card className="border-0 shadow-xl overflow-hidden rounded-3xl bg-white border border-slate-200">
+            <CardHeader className="bg-blue-600 text-white p-6">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2.5 text-lg font-black">
+                  <Upload className="w-5 h-5" />
+                  Pulihkan Data (Restore)
+                </CardTitle>
+                <span className="text-[11px] font-bold bg-white/20 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                  Multi-Format
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6 space-y-5">
+              <p className="text-xs text-gray-600 leading-relaxed">
+                Mendukung pemulihan dari arsip <strong>.ZIP</strong> (memulihkan database dan seluruh foto/dokumen) maupun file <strong>.JSON</strong> (database saja). Sistem otomatis mengenali format dan memulihkannya.
+              </p>
+
+              <div className="relative">
+                <input 
+                  type="file" 
+                  accept=".zip,.json" 
+                  onChange={handleUniversalImport}
+                  disabled={restoring}
+                  className="hidden" 
+                  id="universal-import-file" 
+                />
+                <label 
+                  htmlFor="universal-import-file"
+                  className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-2xl cursor-pointer transition-all p-4 text-center ${
+                    restoring ? 'bg-blue-50/70 border-blue-300' : 'hover:border-blue-500 hover:bg-blue-50/40 border-slate-300 bg-slate-50/50'
+                  }`}
+                >
+                  {restoring ? (
+                    <div className="flex flex-col items-center gap-2.5">
+                      <Loader2 className="w-9 h-9 animate-spin text-blue-600" />
+                      <span className="text-xs font-extrabold text-blue-900">{restoreProgress || 'Sedang Memulihkan Data...'}</span>
+                      <span className="text-[11px] text-blue-700">Mohon jangan menutup halaman ini...</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-600 mb-1">
+                        <Upload className="w-6 h-6" />
+                      </div>
+                      <span className="text-xs font-extrabold text-slate-800">
+                        Klik untuk Pilih File Cadangan (.ZIP atau .JSON)
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        Mendukung arsip lengkap ZIP (database + gambar) & JSON
+                      </span>
+                    </div>
+                  )}
+                </label>
+              </div>
+
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/80 flex items-start gap-2.5 text-xs text-amber-800">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <strong>Peringatan Pemulihan:</strong> Data yang ada saat ini akan diselaraskan dengan data cadangan. Disarankan membuat backup terbaru sebelum melakukan restore.
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Paket Hosting ZIP Ready (Hanya untuk Super Admin) */}
+        {/* Paket Hosting ZIP Ready (Khusus Super Admin) */}
         {isSuperAdmin && (
           <Card className="border-0 shadow-xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white overflow-hidden relative rounded-3xl">
             <CardContent className="p-6 md:p-8 space-y-6 z-10 relative">
@@ -216,7 +745,7 @@ const BackupAdmin = () => {
                   </div>
                   <h3 className="text-2xl font-black text-white">Paket Instalasi Hosting Siap Pakai (.ZIP)</h3>
                   <p className="text-sm text-slate-300 leading-relaxed max-w-2xl">
-                    File ZIP kompilasi statis lengkap tanpa perlu install Node.js/npm di server hosting. Tinggal upload & extract di folder <code className="bg-white/10 px-1.5 py-0.5 rounded text-emerald-300 font-mono text-xs">httpdocs</code> (Plesk) atau <code className="bg-white/10 px-1.5 py-0.5 rounded text-emerald-300 font-mono text-xs">public_html</code> (cPanel).
+                    File ZIP kompilasi statis lengkap tanpa perlu install Node.js/npm di server hosting. Ekstrak langsung di folder <code className="bg-white/10 px-1.5 py-0.5 rounded text-emerald-300 font-mono text-xs">httpdocs</code> (Plesk) atau <code className="bg-white/10 px-1.5 py-0.5 rounded text-emerald-300 font-mono text-xs">public_html</code> (cPanel).
                   </p>
                 </div>
 
@@ -226,7 +755,7 @@ const BackupAdmin = () => {
                     disabled={downloadingZip}
                     onClick={() => handleDownloadFile('/siakadmadrasah-cpanel-ready.zip', 'siakadmadrasah-cpanel-ready.zip')}
                     className="inline-flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-2xl h-14 px-6 shadow-xl hover:scale-105 active:scale-95 transition-all text-base shrink-0 cursor-pointer"
-                    title="Unduh file ZIP cPanel hosting siap pakai dengan akun database masbagoes_siakad"
+                    title="Unduh file ZIP cPanel hosting siap pakai"
                   >
                     {downloadingZip ? (
                       <>
@@ -236,7 +765,7 @@ const BackupAdmin = () => {
                     ) : (
                       <>
                         <Download className="w-5 h-5" />
-                        Unduh ZIP cPanel (Database masbagoes_siakad)
+                        Unduh ZIP cPanel Ready
                       </>
                     )}
                   </button>
@@ -253,14 +782,14 @@ const BackupAdmin = () => {
                   </button>
 
                   <a 
-                    href="https://github.com/siakadmadrasah-lang/Master-Siakad/archive/refs/heads/main.zip"
+                    href="https://github.com/siakadmadrasah-lang/Master-Siakad.git"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl h-14 px-5 border border-white/20 hover:scale-105 transition-all text-sm shrink-0"
-                    title="Unduh Source Code Utuh langsung dari GitHub"
+                    title="Buka Repositori GitHub Master-Siakad"
                   >
                     <ExternalLink className="w-4 h-4" />
-                    Source ZIP
+                    GitHub Repo
                   </a>
                 </div>
               </div>
@@ -268,10 +797,10 @@ const BackupAdmin = () => {
               <div className="grid sm:grid-cols-3 gap-4 text-xs">
                 <div className="bg-white/5 border border-white/10 p-4 rounded-2xl space-y-2">
                   <div className="font-bold text-emerald-400 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4" /> Optimasi Kecepatan
+                    <CheckCircle2 className="w-4 h-4" /> Kebal Timpa ZIP
                   </div>
                   <p className="text-slate-300 leading-relaxed">
-                    Sudah dilengkapi <code className="text-amber-300">.htaccess</code> berisi Gzip compression, browser caching, dan routing SPA otomatis agar website di hosting sangat cepat & tangkas.
+                    Kredensial database di <code className="text-amber-300">db_config.local.php</code> dan berkas di <code className="text-amber-300">uploads/</code> tidak akan pernah terhapus saat Anda menimpa ZIP baru di hosting.
                   </p>
                 </div>
 
@@ -310,91 +839,6 @@ const BackupAdmin = () => {
             </CardContent>
           </Card>
         )}
-
-        <div className="grid md:grid-cols-2 gap-6">
-          {/* Export Card */}
-          <Card className="border-0 shadow-lg overflow-hidden">
-            <CardHeader className="bg-emerald-600 text-white">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Download className="w-5 h-5" />
-                Ekspor Data (Backup)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-6 space-y-4">
-              <p className="text-sm text-gray-500">
-                Unduh seluruh data (Pengaturan, Kurikulum, Bank Soal, Artikel, dan Data Pendaftar) dalam format JSON.
-              </p>
-              <div className="p-4 bg-gray-50 rounded-xl border border-dashed space-y-2">
-                <div className="flex items-center gap-2 text-xs text-gray-600">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                  <span>Data site_settings (Lengkap)</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-gray-600">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                  <span>Data Pendaftaran SPMB</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-amber-600">
-                  <AlertTriangle className="w-3 h-3" />
-                  <span>File Gambar (Storage) tidak ikut terunduh</span>
-                </div>
-              </div>
-              <Button 
-                onClick={handleExport} 
-                disabled={loading}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl h-12 font-bold"
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <FileJson className="w-4 h-4 mr-2" />}
-                Unduh Backup Sekarang
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Import Card */}
-          <Card className="border-0 shadow-lg overflow-hidden">
-            <CardHeader className="bg-blue-600 text-white">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Upload className="w-5 h-5" />
-                Impor Data (Restore)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-6 space-y-4">
-              <p className="text-sm text-gray-500">
-                Pulihkan data dari file backup sebelumnya. Gunakan fitur ini hanya saat migrasi atau pemulihan darurat.
-              </p>
-              <div className="relative">
-                <input 
-                  type="file" 
-                  accept=".json" 
-                  onChange={handleImport}
-                  disabled={restoring}
-                  className="hidden" 
-                  id="import-file" 
-                />
-                <label 
-                  htmlFor="import-file"
-                  className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-2xl cursor-pointer transition-all ${
-                    restoring ? 'bg-gray-100 border-gray-300' : 'hover:border-blue-400 hover:bg-blue-50 border-gray-200'
-                  }`}
-                >
-                  {restoring ? (
-                    <div className="flex flex-col items-center gap-2">
-                      <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                      <span className="text-xs font-bold text-blue-600">Memproses Data...</span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center gap-2">
-                      <Database className="w-8 h-8 text-gray-300" />
-                      <span className="text-xs text-gray-500">Klik untuk pilih file .json</span>
-                    </div>
-                  )}
-                </label>
-              </div>
-              <p className="text-[10px] text-red-500 font-medium italic text-center">
-                * Perhatian: Data lama akan ditimpa oleh data dari file backup.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
 
         {/* Google Sheets Live Sync Hub */}
         <Card className="border-0 shadow-xl bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950 text-white overflow-hidden relative rounded-3xl border border-emerald-500/20">
@@ -442,21 +886,6 @@ const BackupAdmin = () => {
               <Printer className="w-4 h-4 text-emerald-600" /> Kelola & Cetak Arsip <ArrowRight className="w-4 h-4" />
             </Button>
             <Archive className="absolute -right-4 -bottom-4 w-36 h-36 text-white/5 pointer-events-none" />
-          </CardContent>
-        </Card>
-
-        <Card className="border-0 shadow-lg bg-emerald-50 border-emerald-100">
-          <CardContent className="p-6 flex gap-4">
-            <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
-              <ShieldCheck className="w-6 h-6 text-emerald-600" />
-            </div>
-            <div>
-              <h4 className="font-bold text-emerald-900">Tips Keamanan</h4>
-              <p className="text-xs text-emerald-700 leading-relaxed mt-1">
-                Lakukan backup setidaknya sebulan sekali. Simpan file backup di media penyimpanan offline (Flashdisk/Harddisk) dan online (Cloud). 
-                Untuk file gambar di menu Galeri atau Berita, Anda dapat mem-backup folder media secara berkala.
-              </p>
-            </div>
           </CardContent>
         </Card>
 

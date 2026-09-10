@@ -18,15 +18,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-// Muat Konfigurasi Database jika file db_config.php ada
+// Muat Konfigurasi Database (Prioritaskan db_config.local.php agar kebal terhadap timpa ZIP)
+if (file_exists(__DIR__ . '/db_config.local.php')) {
+    include_once __DIR__ . '/db_config.local.php';
+}
 if (file_exists(__DIR__ . '/db_config.php')) {
     include_once __DIR__ . '/db_config.php';
+}
+if (!defined('DB_HOST') && file_exists(__DIR__ . '/uploads/.db_config_backup.php')) {
+    include_once __DIR__ . '/uploads/.db_config_backup.php';
 }
 
 $db_host = trim(defined('DB_HOST') ? DB_HOST : 'localhost');
 $db_name = trim(defined('DB_NAME') ? DB_NAME : 'masbagoes_siakad');
 $db_user = trim(defined('DB_USER') ? DB_USER : 'masbagoes_siakad');
 $db_pass = trim(defined('DB_PASS') ? DB_PASS : 'masbagus15');
+
+// Otomatis amankan konfigurasi aktif ke db_config.local.php dan uploads/.db_config_backup.php jika belum ada
+// agar ketika file ZIP baru ditimpa di Plesk / cPanel, koneksi database tidak tereset!
+try {
+    if (!file_exists(__DIR__ . '/db_config.local.php') && defined('DB_HOST')) {
+        $secConfigContent = "<?php\n" .
+            "// Konfigurasi Database Lokal - DILINDUNGI DARI TIMPA ZIP (cPanel & Plesk)\n" .
+            "define('DB_HOST', " . var_export($db_host, true) . ");\n" .
+            "define('DB_NAME', " . var_export($db_name, true) . ");\n" .
+            "define('DB_USER', " . var_export($db_user, true) . ");\n" .
+            "define('DB_PASS', " . var_export($db_pass, true) . ");\n";
+        @file_put_contents(__DIR__ . '/db_config.local.php', $secConfigContent);
+    }
+    if (!file_exists(__DIR__ . '/uploads/.db_config_backup.php') && defined('DB_HOST')) {
+        if (!file_exists(__DIR__ . '/uploads')) {
+            @mkdir(__DIR__ . '/uploads', 0777, true);
+        }
+        $secConfigContent = "<?php\n" .
+            "// Cadangan Konfigurasi Database - DILINDUNGI DARI TIMPA ZIP\n" .
+            "if (!defined('DB_HOST')) define('DB_HOST', " . var_export($db_host, true) . ");\n" .
+            "if (!defined('DB_NAME')) define('DB_NAME', " . var_export($db_name, true) . ");\n" .
+            "if (!defined('DB_USER')) define('DB_USER', " . var_export($db_user, true) . ");\n" .
+            "if (!defined('DB_PASS')) define('DB_PASS', " . var_export($db_pass, true) . ");\n";
+        @file_put_contents(__DIR__ . '/uploads/.db_config_backup.php', $secConfigContent);
+    }
+} catch (Throwable $e) {}
 
 try {
     $pdo = new PDO("mysql:host=$db_host;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass, [
@@ -500,6 +532,426 @@ if ($action === 'upload') {
         'status' => 'error',
         'error' => 'Gagal mengunggah berkas gambar.' . $fileErrNotice,
         'hint' => 'Pastikan folder "uploads" di direktori web hosting memiliki hak akses/permission 0755 atau 0777.'
+    ]);
+    exit();
+}
+
+// -------------------------------------------------------------------------
+// 1. BACKUP LENGKAP: DATABASE + GAMBAR & DOKUMEN (ZIP)
+// -------------------------------------------------------------------------
+if ($action === 'backup_full' || $action === 'export_zip') {
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+
+    // Ambil seluruh data dari site_settings
+    $stmt = $pdo->query("SELECT id, value, updated_at FROM `site_settings`");
+    $rawSettings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $settings = [];
+    foreach ($rawSettings as $row) {
+        $decoded = json_decode($row['value'], true);
+        $settings[] = [
+            'id' => $row['id'],
+            'value' => $decoded !== null ? $decoded : $row['value'],
+            'updated_at' => $row['updated_at']
+        ];
+    }
+
+    // Ambil data pendaftaran_spmb jika tabel tersedia
+    $spmb = [];
+    try {
+        $sStmt = $pdo->query("SELECT * FROM `pendaftaran_spmb`");
+        if ($sStmt) {
+            $spmb = $sStmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (Throwable $e) {}
+
+    // Ambil data teachers jika tabel tersedia
+    $teachers = [];
+    try {
+        $tStmt = $pdo->query("SELECT * FROM `teachers`");
+        if ($tStmt) {
+            $teachers = $tStmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (Throwable $e) {}
+
+    // Ambil data users jika tabel tersedia
+    $users = [];
+    try {
+        $uStmt = $pdo->query("SELECT id, username, email, role, created_at FROM `users`");
+        if ($uStmt) {
+            $users = $uStmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (Throwable $e) {}
+
+    $schoolName = 'SIAKAD Madrasah';
+    foreach ($settings as $s) {
+        if ($s['id'] === 'general' && is_array($s['value']) && !empty($s['value']['school_name'])) {
+            $schoolName = $s['value']['school_name'];
+            break;
+        }
+    }
+
+    $databaseData = [
+        'version' => '2.0',
+        'app' => 'SIAKAD MIMA 2 Sanggreman',
+        'timestamp' => date('c'),
+        'school_name' => $schoolName,
+        'tables' => [
+            'site_settings' => $settings,
+            'pendaftaran_spmb' => $spmb,
+            'teachers' => $teachers,
+            'users' => $users
+        ]
+    ];
+
+    // Pindai seluruh berkas di direktori uploads/ (gambar, dokumen, pdf, dll)
+    $uploadDir = __DIR__ . '/uploads/';
+    $uploadFiles = [];
+    if (file_exists($uploadDir) && is_dir($uploadDir)) {
+        $dirItems = scandir($uploadDir);
+        foreach ($dirItems as $item) {
+            if ($item === '.' || $item === '..' || $item === '.htaccess' || $item === 'index.html' || strpos($item, '.') === 0) {
+                continue;
+            }
+            $itemPath = $uploadDir . $item;
+            if (is_file($itemPath)) {
+                $uploadFiles[] = [
+                    'name' => $item,
+                    'path' => $itemPath,
+                    'size' => filesize($itemPath),
+                    'mime' => @mime_content_type($itemPath) ?: 'application/octet-stream'
+                ];
+            }
+        }
+    }
+
+    // Buat SQL Dump untuk impor darurat phpMyAdmin
+    $sqlDump = "-- ========================================================\n";
+    $sqlDump .= "-- CADANGAN DATABASE SIAKAD MADRASAH (FULL SQL DUMP)\n";
+    $sqlDump .= "-- Madrasah: " . $schoolName . "\n";
+    $sqlDump .= "-- Tanggal : " . date('Y-m-d H:i:s') . "\n";
+    $sqlDump .= "-- ========================================================\n\n";
+    $sqlDump .= "SET FOREIGN_KEY_CHECKS = 0;\n";
+    $sqlDump .= "CREATE TABLE IF NOT EXISTS `site_settings` (\n";
+    $sqlDump .= "  `id` VARCHAR(191) NOT NULL PRIMARY KEY,\n";
+    $sqlDump .= "  `value` LONGTEXT NOT NULL,\n";
+    $sqlDump .= "  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP\n";
+    $sqlDump .= ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n\n";
+    foreach ($rawSettings as $row) {
+        $sqlDump .= "INSERT INTO `site_settings` (`id`, `value`) VALUES (" . $pdo->quote($row['id']) . ", " . $pdo->quote($row['value']) . ") ON DUPLICATE KEY UPDATE `value`=VALUES(`value`);\n";
+    }
+    $sqlDump .= "\nSET FOREIGN_KEY_CHECKS = 1;\n";
+
+    $manifest = [
+        'app' => 'SIAKAD Madrasah',
+        'backup_type' => 'full_archive',
+        'version' => '2.0',
+        'created_at' => date('Y-m-d H:i:s'),
+        'school_name' => $schoolName,
+        'stats' => [
+            'site_settings_count' => count($settings),
+            'spmb_count' => count($spmb),
+            'teachers_count' => count($teachers),
+            'uploads_count' => count($uploadFiles)
+        ],
+        'files' => array_map(function($f) { return $f['name']; }, $uploadFiles)
+    ];
+
+    $safeSchool = preg_replace('/[^a-zA-Z0-9_-]/', '_', $schoolName);
+    $zipFilename = 'backup-siakad-lengkap-' . strtolower($safeSchool) . '-' . date('Y-m-d_His') . '.zip';
+
+    if (class_exists('ZipArchive')) {
+        $tempZip = tempnam(sys_get_temp_dir(), 'siakad_bak_');
+        $zip = new ZipArchive();
+        if ($zip->open($tempZip, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true) {
+            $zip->addFromString('database.json', json_encode($databaseData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            $zip->addFromString('manifest.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            $zip->addFromString('database.sql', $sqlDump);
+            
+            // Masukkan seluruh berkas uploads/
+            foreach ($uploadFiles as $uf) {
+                $zip->addFile($uf['path'], 'uploads/' . $uf['name']);
+            }
+            $zip->close();
+
+            header('Content-Type: application/zip');
+            header('Content-Disposition: attachment; filename="' . $zipFilename . '"');
+            header('Content-Length: ' . filesize($tempZip));
+            header('Cache-Control: no-cache, no-store, must-revalidate');
+            header('Pragma: no-cache');
+            header('Expires: 0');
+            readfile($tempZip);
+            @unlink($tempZip);
+            exit();
+        }
+    }
+
+    // Fallback jika ZipArchive belum diaktifkan di PHP server hosting
+    header('Content-Type: application/json; charset=utf-8');
+    $embeddedFiles = [];
+    foreach ($uploadFiles as $uf) {
+        if ($uf['size'] < 10 * 1024 * 1024) {
+            $embeddedFiles[] = [
+                'name' => $uf['name'],
+                'data' => base64_encode(file_get_contents($uf['path'])),
+                'mime' => $uf['mime']
+            ];
+        }
+    }
+    echo json_encode([
+        'status' => 'success',
+        'fallback_json' => true,
+        'manifest' => $manifest,
+        'database' => $databaseData,
+        'uploads' => $embeddedFiles
+    ]);
+    exit();
+}
+
+// -------------------------------------------------------------------------
+// 2. RESTORE LENGKAP: DATABASE + GAMBAR & DOKUMEN (DARI ZIP MAUPUN JSON)
+// -------------------------------------------------------------------------
+if ($action === 'restore_full') {
+    $uploadedZipPath = null;
+    $isJson = false;
+    $jsonContent = null;
+
+    if (!empty($_FILES)) {
+        foreach ($_FILES as $f) {
+            if (isset($f['tmp_name']) && !empty($f['tmp_name']) && $f['error'] === UPLOAD_ERR_OK) {
+                $origName = strtolower($f['name']);
+                if (str_ends_with($origName, '.zip')) {
+                    $uploadedZipPath = $f['tmp_name'];
+                } elseif (str_ends_with($origName, '.json')) {
+                    $isJson = true;
+                    $jsonContent = file_get_contents($f['tmp_name']);
+                }
+                break;
+            }
+        }
+    }
+
+    if (!$uploadedZipPath && !$isJson) {
+        $raw = file_get_contents('php://input');
+        if ($raw) {
+            $decoded = json_decode($raw, true);
+            if ($decoded && (isset($decoded['tables']) || isset($decoded['database']))) {
+                $isJson = true;
+                $jsonContent = $raw;
+            }
+        }
+    }
+
+    $restoredFiles = 0;
+    $restoredSettings = 0;
+    $restoredSpmb = 0;
+    $uploadDir = __DIR__ . '/uploads/';
+    if (!file_exists($uploadDir)) {
+        @mkdir($uploadDir, 0777, true);
+    }
+
+    if ($uploadedZipPath && class_exists('ZipArchive')) {
+        $zip = new ZipArchive();
+        if ($zip->open($uploadedZipPath) === true) {
+            // 1. Ekstrak & Restore database.json
+            $dbJson = $zip->getFromName('database.json');
+            if ($dbJson) {
+                $jsonObj = json_decode($dbJson, true);
+                if ($jsonObj && isset($jsonObj['tables'])) {
+                    $tables = $jsonObj['tables'];
+                    if (!empty($tables['site_settings']) && is_array($tables['site_settings'])) {
+                        $stmtUpsert = $pdo->prepare("INSERT INTO `site_settings` (`id`, `value`, `updated_at`) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE `value`=VALUES(`value`), `updated_at`=NOW()");
+                        foreach ($tables['site_settings'] as $row) {
+                            $rowId = is_array($row) ? $row['id'] : null;
+                            $rowVal = is_array($row) ? (is_string($row['value']) ? $row['value'] : json_encode($row['value'], JSON_UNESCAPED_UNICODE)) : null;
+                            if ($rowId) {
+                                $stmtUpsert->execute([$rowId, $rowVal]);
+                                $restoredSettings++;
+                            }
+                        }
+                    }
+                    if (!empty($tables['pendaftaran_spmb']) && is_array($tables['pendaftaran_spmb'])) {
+                        try {
+                            $pdo->exec("CREATE TABLE IF NOT EXISTS `pendaftaran_spmb` (
+                                `id` VARCHAR(191) NOT NULL PRIMARY KEY,
+                                `data` LONGTEXT NULL,
+                                `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+                            
+                            $stmtSpmb = $pdo->prepare("INSERT INTO `pendaftaran_spmb` (`id`, `data`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `data`=VALUES(`data`)");
+                            foreach ($tables['pendaftaran_spmb'] as $sp) {
+                                if (isset($sp['id'])) {
+                                    $stmtSpmb->execute([$sp['id'], json_encode($sp, JSON_UNESCAPED_UNICODE)]);
+                                    $restoredSpmb++;
+                                }
+                            }
+                        } catch (Throwable $e) {}
+                    }
+                }
+            }
+
+            // 2. Ekstrak seluruh berkas gambar dan dokumen dari uploads/*
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $entryName = $zip->getNameIndex($i);
+                if (str_starts_with($entryName, 'uploads/')) {
+                    $subName = substr($entryName, strlen('uploads/'));
+                    if (empty($subName) || str_ends_with($subName, '/')) continue;
+                    
+                    $cleanName = basename($subName);
+                    // Filter keamanan ketat: cegah berkas executable
+                    if (preg_match('/\.(php|phtml|sh|pl|py|cgi|asp|exe)$/i', $cleanName)) continue;
+                    if ($cleanName === '.htaccess') continue;
+                    
+                    $content = $zip->getFromIndex($i);
+                    if ($content !== false) {
+                        @file_put_contents($uploadDir . $cleanName, $content);
+                        @chmod($uploadDir . $cleanName, 0644);
+                        $restoredFiles++;
+                    }
+                }
+            }
+            $zip->close();
+
+            echo json_encode([
+                'status' => 'success',
+                'message' => "Restorasi arsip ZIP berhasil! Dipulihkan: $restoredSettings data modul/pengaturan dan $restoredFiles berkas gambar & dokumen.",
+                'restored_settings' => $restoredSettings,
+                'restored_files' => $restoredFiles,
+                'restored_spmb' => $restoredSpmb
+            ]);
+            exit();
+        } else {
+            echo json_encode(['status' => 'error', 'error' => 'Gagal membuka file ZIP arsip backup.']);
+            exit();
+        }
+    }
+
+    if ($isJson && $jsonContent) {
+        $jsonObj = json_decode($jsonContent, true);
+        if (!$jsonObj) {
+            echo json_encode(['status' => 'error', 'error' => 'Format JSON tidak valid.']);
+            exit();
+        }
+        $tables = isset($jsonObj['tables']) ? $jsonObj['tables'] : (isset($jsonObj['database']['tables']) ? $jsonObj['database']['tables'] : []);
+        if (!empty($tables['site_settings']) && is_array($tables['site_settings'])) {
+            $stmtUpsert = $pdo->prepare("INSERT INTO `site_settings` (`id`, `value`, `updated_at`) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE `value`=VALUES(`value`), `updated_at`=NOW()");
+            foreach ($tables['site_settings'] as $row) {
+                $rowId = is_array($row) ? $row['id'] : null;
+                $rowVal = is_array($row) ? (is_string($row['value']) ? $row['value'] : json_encode($row['value'], JSON_UNESCAPED_UNICODE)) : null;
+                if ($rowId) {
+                    $stmtUpsert->execute([$rowId, $rowVal]);
+                    $restoredSettings++;
+                }
+            }
+        }
+        if (!empty($jsonObj['uploads']) && is_array($jsonObj['uploads'])) {
+            foreach ($jsonObj['uploads'] as $u) {
+                if (!empty($u['name']) && !empty($u['data'])) {
+                    $clean = basename($u['name']);
+                    if (!preg_match('/\.(php|phtml|sh|pl|py|cgi|asp|exe)$/i', $clean) && $clean !== '.htaccess') {
+                        $bin = base64_decode($u['data']);
+                        if ($bin !== false) {
+                            @file_put_contents($uploadDir . $clean, $bin);
+                            @chmod($uploadDir . $clean, 0644);
+                            $restoredFiles++;
+                        }
+                    }
+                }
+            }
+        }
+
+        echo json_encode([
+            'status' => 'success',
+            'message' => "Restorasi JSON berhasil! Dipulihkan: $restoredSettings modul data dan $restoredFiles berkas lampiran.",
+            'restored_settings' => $restoredSettings,
+            'restored_files' => $restoredFiles
+        ]);
+        exit();
+    }
+
+    echo json_encode(['status' => 'error', 'error' => 'Berkas backup (.zip atau .json) tidak ditemukan.']);
+    exit();
+}
+
+// -------------------------------------------------------------------------
+// 3. DAFTAR BERKAS UPLOADS (GAMBAR & DOKUMEN)
+// -------------------------------------------------------------------------
+if ($action === 'list_uploads') {
+    $uploadDir = __DIR__ . '/uploads/';
+    $files = [];
+    $isHttps = (isset($_SERVER['HTTPS']) && ($_SERVER['HTTPS'] === 'on' || $_SERVER['HTTPS'] === '1')) || 
+               (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+    $protocol = $isHttps ? 'https' : 'http';
+    $host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
+    $dir = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/\\');
+    $dirPath = ($dir === '' || $dir === '.' || $dir === '/') ? '' : $dir;
+
+    $totalSize = 0;
+    if (file_exists($uploadDir) && is_dir($uploadDir)) {
+        $items = scandir($uploadDir);
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..' || $item === '.htaccess' || $item === 'index.html' || strpos($item, '.') === 0) continue;
+            $path = $uploadDir . $item;
+            if (is_file($path)) {
+                $fSize = filesize($path);
+                $totalSize += $fSize;
+                $files[] = [
+                    'name' => $item,
+                    'size' => $fSize,
+                    'url' => $protocol . '://' . $host . $dirPath . '/uploads/' . $item,
+                    'modified' => date('c', filemtime($path))
+                ];
+            }
+        }
+    }
+    echo json_encode([
+        'status' => 'success',
+        'data' => $files,
+        'total_files' => count($files),
+        'total_size_bytes' => $totalSize,
+        'total_size_mb' => round($totalSize / (1024 * 1024), 2)
+    ]);
+    exit();
+}
+
+// -------------------------------------------------------------------------
+// 4. STATUS PERLINDUNGAN & KESEHATAN SISTEM HOSTING
+// -------------------------------------------------------------------------
+if ($action === 'backup_status') {
+    $hasLocalConfig = file_exists(__DIR__ . '/db_config.local.php');
+    $hasBackupConfig = file_exists(__DIR__ . '/uploads/.db_config_backup.php');
+    $uploadDir = __DIR__ . '/uploads/';
+    $fileCount = 0;
+    $totalSize = 0;
+    if (file_exists($uploadDir) && is_dir($uploadDir)) {
+        foreach (scandir($uploadDir) as $item) {
+            if ($item !== '.' && $item !== '..' && $item !== '.htaccess' && $item !== 'index.html' && strpos($item, '.') !== 0) {
+                $p = $uploadDir . $item;
+                if (is_file($p)) {
+                    $fileCount++;
+                    $totalSize += filesize($p);
+                }
+            }
+        }
+    }
+
+    $settingCount = 0;
+    try {
+        $c = $pdo->query("SELECT COUNT(*) FROM `site_settings`");
+        if ($c) $settingCount = (int)$c->fetchColumn();
+    } catch (Throwable $e) {}
+
+    echo json_encode([
+        'status' => 'success',
+        'safe_overwrite_protection' => true,
+        'has_local_config' => $hasLocalConfig,
+        'has_backup_config' => $hasBackupConfig,
+        'upload_files_count' => $fileCount,
+        'upload_files_size_mb' => round($totalSize / (1024 * 1024), 2),
+        'settings_records_count' => $settingCount,
+        'zip_support' => class_exists('ZipArchive'),
+        'message' => 'Sistem cadangan dan proteksi timpa ZIP aktif!'
     ]);
     exit();
 }

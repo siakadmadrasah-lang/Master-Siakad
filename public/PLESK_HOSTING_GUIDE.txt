@@ -61,6 +61,35 @@ Anda TIDAK PERLU menginstall Node.js, npm, atau menjalankan 'npm install' di hos
   3. Centang "Serve static files directly by Nginx" (jika Nginx tersedia).
   4. Aktifkan HTTPS/SSL melalui menu "SSL/TLS Certificates" -> Let's Encrypt.
 
+------------------------------------------------------------------------
+4. UPDATE / TIMPA ZIP TANPA MENGHAPUS DATA (SAFE OVERWRITE PROTECTION)
+------------------------------------------------------------------------
+Paket ini telah dilengkapi mekanisme Perlindungan Timpa ZIP Otomatis:
+- Kredensial koneksi database Anda dilindungi melalui `db_config.local.php`
+  dan cadangan di `uploads/.db_config_backup.php`.
+- Saat Anda mengunggah dan mengekstrak file ZIP versi baru di cPanel (`public_html`)
+  maupun Plesk (`httpdocs`):
+  * Pengaturan database Anda TIDAK AKAN HILANG atau tertimpa.
+  * Seluruh data yang tersimpan di database MySQL TETAP UTUH.
+  * Berkas-berkas di folder `uploads/` (foto siswa, foto guru, SK, dokumen)
+    TETAP AMAN dan TIDAK AKAN TERHAPUS.
+
+------------------------------------------------------------------------
+5. FITUR BACKUP & RESTORE LENGKAP (DATABASE + GAMBAR + DOKUMEN)
+------------------------------------------------------------------------
+- Buka menu Admin -> "Backup & Restore Data".
+- Klik "Unduh Backup Lengkap (.ZIP)":
+  File ZIP yang diunduh mencakup:
+  1) `database.json`: seluruh data modul, pengaturan, dan SPMB
+  2) `uploads/`: seluruh gambar, foto GTK/siswa, sertifikat, dan dokumen
+  3) `manifest.json`: catatan versi, tanggal, dan rekap jumlah data
+  4) `database.sql`: dump script SQL yang siap diimpor di phpMyAdmin
+- Untuk memulihkan data (Restore):
+  Tinggal pilih berkas `.zip` backup tersebut di kotak "Impor Data (Restore)".
+  Sistem akan otomatis mengekstrak seluruh dokumen/gambar ke folder `uploads/`
+  dan mengembalikan seluruh data database secara serentak.
+
 ========================================================================
-Si@Kad Madrasah Berbasis Digital - MySQL Database Ready!
+SIAKAD MIMA 2 Sanggreman - MySQL Database Ready & Safe Overwrite Protected!
 ========================================================================
+

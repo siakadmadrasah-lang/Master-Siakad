@@ -12,8 +12,8 @@ const pickFirst = (...values) => values.find((v) => typeof v === 'string' && v.t
 
 const fallbackSiteUrl = 'https://siakad-madrasah.edgeone.dev';
 const defaultOgImageName = (env.VITE_OG_IMAGE_NAME || '').trim() || 'og-image-share-v2.jpeg';
-const defaultTitle = 'Si@Kad Madrasah Berbasis Digital';
-const defaultDescription = 'Sistem Informasi Akademik Modern Si@Kad Madrasah';
+const defaultTitle = 'SIAKAD MIMA 2 Sanggreman';
+const defaultDescription = "Sistem Informasi Akademik Madrasah Ibtidaiyah Ma'arif 2 Sanggreman";
 const fallbackSupabaseUrl = 'https://zyytldzzqahayjxyegdm.supabase.co';
 const fallbackSupabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5eXRsZHp6cWFoYXlqeHllZ2RtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MzA1MzAsImV4cCI6MjA4OTUwNjUzMH0.xNhRWM9qCOcIfu89jbM-atzp3pj86h2lUVmibn18UEI';
 
@@ -166,8 +166,8 @@ const fallbackOgImageUrl = directOgImageUrl
   ? directOgImageUrl.trim()
   : `${effectiveSiteUrl}/${defaultOgImageName}`;
 
-const schoolName = sanitizeText(general.school_name, defaultTitle);
-const metaTitle = sanitizeText(seo.title || general.school_name, schoolName);
+const schoolName = defaultTitle;
+const metaTitle = defaultTitle;
 const metaDescription = sanitizeText(seo.description || general.tagline, defaultDescription);
 const ogTitle = sanitizeText(seo.og_title || metaTitle, metaTitle);
 const ogDescription = sanitizeText(seo.og_description || metaDescription, metaDescription);

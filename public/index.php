@@ -43,15 +43,22 @@ $ogImageUrl = $siteUrl . "/og-image-share-v2.jpeg";
 $ogImageType = "image/jpeg";
 $canonicalUrl = $pageUrl;
 
-// Baca Pengaturan dari MySQL jika db_config.php sudah terpasang
+// Baca Pengaturan dari MySQL jika db_config.local.php / db_config.php sudah terpasang
+if (file_exists(__DIR__ . '/db_config.local.php')) {
+    include_once __DIR__ . '/db_config.local.php';
+}
 if (file_exists(__DIR__ . '/db_config.php')) {
     include_once __DIR__ . '/db_config.php';
-    $db_host = defined('DB_HOST') ? DB_HOST : 'localhost';
-    $db_name = defined('DB_NAME') ? DB_NAME : 'masbagoes_siakad';
-    $db_user = defined('DB_USER') ? DB_USER : 'masbagoes_siakad';
-    $db_pass = defined('DB_PASS') ? DB_PASS : 'masbagus15';
+}
+if (!defined('DB_HOST') && file_exists(__DIR__ . '/uploads/.db_config_backup.php')) {
+    include_once __DIR__ . '/uploads/.db_config_backup.php';
+}
+$db_host = defined('DB_HOST') ? DB_HOST : 'localhost';
+$db_name = defined('DB_NAME') ? DB_NAME : 'masbagoes_siakad';
+$db_user = defined('DB_USER') ? DB_USER : 'masbagoes_siakad';
+$db_pass = defined('DB_PASS') ? DB_PASS : 'masbagus15';
 
-    try {
+try {
         $pdo = new PDO("mysql:host=$db_host;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_SILENT,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
