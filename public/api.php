@@ -4,7 +4,9 @@
  * Menghubungkan Aplikasi Web dengan Database MySQL / MariaDB di Hosting (Plesk / cPanel / DirectAdmin)
  */
 
-if (!ob_start('ob_gzhandler')) {
+if (extension_loaded('zlib') && !ini_get('zlib.output_compression')) {
+    @ob_start('ob_gzhandler');
+} else {
     ob_start();
 }
 

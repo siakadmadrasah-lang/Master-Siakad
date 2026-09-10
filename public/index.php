@@ -6,6 +6,9 @@
  */
 
 // PHP 7 Compatibility Polyfills untuk mencegah error 500 di hosting cPanel versi PHP lama
+@error_reporting(0);
+@ini_set('display_errors', '0');
+
 if (!function_exists('str_contains')) {
     function str_contains($haystack, $needle) {
         return $needle !== '' && mb_strpos($haystack, $needle) !== false;
@@ -148,7 +151,6 @@ try {
     } catch (Throwable $e) {
         // Fallback ke default jika database belum dikonfigurasi atau belum dibuat
     }
-}
 
 // Tentukan MIME Type Gambar Open Graph secara Presisi
 $lowerImg = strtolower($ogImageUrl);

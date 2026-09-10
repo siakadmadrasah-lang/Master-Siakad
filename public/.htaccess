@@ -12,7 +12,6 @@ DirectoryIndex index.php index.html
   RewriteRule ^index\.html$ index.php [L]
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteCond %{REQUEST_FILENAME} !-l
   RewriteRule . index.php [L]
 </IfModule>
 
@@ -44,10 +43,8 @@ DirectoryIndex index.php index.html
 # Matikan ETag & Pastikan HTML / config.js Tidak Di-cache
 <IfModule mod_headers.c>
   Header unset ETag
-  FileETag None
   Header set X-Content-Type-Options "nosniff"
   Header set X-Frame-Options "SAMEORIGIN"
-  Header set Connection "keep-alive"
 
   # Khusus index.html, index.php, config.js, api.php, dan service worker Wajib No-Cache
   <FilesMatch "\.(html|php|json)$">
