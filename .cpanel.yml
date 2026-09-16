@@ -1,0 +1,7 @@
+---
+deployment:
+  tasks:
+    # Ubah public_html jika menggunakan sub-domain (misal: /home/USERNAME/siakad.domain.com/)
+    - export DEPLOYPATH=public_html/
+    - /bin/cp -R dist/* $DEPLOYPATH
+    - /bin/cp -f public/.htaccess $DEPLOYPATH
