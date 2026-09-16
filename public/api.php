@@ -1024,7 +1024,7 @@ if ($action === 'git_pull') {
     if (!function_exists('exec') && !function_exists('shell_exec')) {
         echo json_encode([
             'status' => 'error',
-            'error' => 'Fitur eksekusi baris perintah (shell/exec) tidak diizinkan oleh konfigurasi PHP hosting ini. Silakan gunakan metode unduh dan ekstrak paket ZIP pembaruan.'
+            'error' => 'Fitur eksekusi baris perintah (shell/exec) tidak diizinkan oleh konfigurasi PHP hosting ini. Silakan gunakan metode 1-Click Update Otomatis dari GitHub atau unduh paket ZIP pembaruan.'
         ]);
         exit();
     }
@@ -1048,6 +1048,207 @@ if ($action === 'git_pull') {
             'output' => $outStr ?: 'Tidak ada respon teks dari Git.'
         ]);
     }
+    exit();
+}
+
+// -------------------------------------------------------------------------
+// 6. 1-CLICK WEB UPDATER DARI GITHUB (AMAN TANPA TIMPA DATA/UPLOADS)
+// -------------------------------------------------------------------------
+if ($action === 'auto_update_web') {
+    // Non-blocking timeout limit
+    @set_time_limit(300);
+    @ini_set('memory_limit', '256M');
+
+    $targetDir = __DIR__;
+    // Cek apakah target adalah root atau folder public
+    if (file_exists($targetDir . '/../package.json')) {
+        $rootDir = realpath($targetDir . '/..');
+    } else {
+        $rootDir = $targetDir;
+    }
+
+    $logs = [];
+    $updatedCount = 0;
+    $protectedSkipped = 0;
+
+    // 1. Coba metode Git Pull terlebih dahulu jika repo terkonfigurasi
+    $gitSuccess = false;
+    if (function_exists('exec') && (is_dir($rootDir . '/.git') || is_dir($targetDir . '/.git'))) {
+        $cmdDir = is_dir($rootDir . '/.git') ? $rootDir : $targetDir;
+        $out = [];
+        $ret = 0;
+        @exec("cd " . escapeshellarg($cmdDir) . " && git pull origin main 2>&1", $out, $ret);
+        if ($ret === 0) {
+            $gitSuccess = true;
+            $logs[] = "Git Pull Sukses: " . implode("\n", $out);
+            echo json_encode([
+                'status' => 'success',
+                'method' => 'git_pull',
+                'message' => 'Pembaruan via Git Pull berhasil! Berkas aplikasi kini telah mutakhir dari GitHub.',
+                'output' => implode("\n", $out),
+                'safe_protection' => 'Data database dan berkas folder uploads/ tetap terjaga utuh 100%.'
+            ]);
+            exit();
+        } else {
+            $logs[] = "Git Pull tidak dapat dieksekusi, beralih otomatis ke metode Download ZIP aman: " . implode("\n", $out);
+        }
+    }
+
+    // 2. Metode Direct Download ZIP dari GitHub (Fallback universal untuk shared hosting cPanel/Plesk)
+    if (!class_exists('ZipArchive')) {
+        echo json_encode([
+            'status' => 'error',
+            'error' => 'Ekstensi PHP ZipArchive belum diaktifkan di server hosting Anda. Silakan aktifkan php-zip melalui cPanel (Select PHP Version / PHP Extensions) atau jalankan Git Pull.'
+        ]);
+        exit();
+    }
+
+    $zipUrl = 'https://codeload.github.com/siakadmadrasah-lang/Master-Siakad/zip/refs/heads/main';
+    $tempZip = sys_get_temp_dir() . '/siakad_update_' . time() . '.zip';
+    if (!is_writable(sys_get_temp_dir())) {
+        $tempZip = $targetDir . '/uploads/temp_update_' . time() . '.zip';
+    }
+
+    // Download ZIP menggunakan cURL atau file_get_contents
+    $downloadSuccess = false;
+    if (function_exists('curl_init')) {
+        $fp = @fopen($tempZip, 'w+');
+        if ($fp) {
+            $ch = curl_init($zipUrl);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 180);
+            curl_setopt($ch, CURLOPT_FILE, $fp);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Siakad-Madrasah-Updater)');
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            $success = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            fclose($fp);
+            if ($success && $httpCode >= 200 && $httpCode < 300 && filesize($tempZip) > 1000) {
+                $downloadSuccess = true;
+            }
+        }
+    }
+
+    if (!$downloadSuccess && ini_get('allow_url_fopen')) {
+        $context = stream_context_create([
+            'http' => [
+                'timeout' => 180,
+                'user_agent' => 'Mozilla/5.0 (Siakad-Madrasah-Updater)'
+            ],
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false
+            ]
+        ]);
+        $data = @file_get_contents($zipUrl, false, $context);
+        if ($data && strlen($data) > 1000) {
+            @file_put_contents($tempZip, $data);
+            $downloadSuccess = true;
+        }
+    }
+
+    if (!$downloadSuccess || !file_exists($tempZip) || filesize($tempZip) < 1000) {
+        @unlink($tempZip);
+        echo json_encode([
+            'status' => 'error',
+            'error' => 'Gagal mengunduh paket pembaruan dari GitHub. Pastikan server hosting Anda mengizinkan koneksi cURL keluar (outbound HTTPS) atau gunakan menu Git Version Control cPanel.'
+        ]);
+        exit();
+    }
+
+    // Ekstrak ZIP secara selektif dengan proteksi total terhadap data tersimpan
+    $zip = new ZipArchive();
+    if ($zip->open($tempZip) !== true) {
+        @unlink($tempZip);
+        echo json_encode([
+            'status' => 'error',
+            'error' => 'Berkas ZIP pembaruan dari GitHub rusak atau tidak dapat dibuka oleh ZipArchive.'
+        ]);
+        exit();
+    }
+
+    // Identifikasi folder prefix di dalam zip (biasanya Master-Siakad-main/)
+    $prefix = '';
+    if ($zip->numFiles > 0) {
+        $firstItem = $zip->getNameIndex(0);
+        if (strpos($firstItem, '/') !== false) {
+            $parts = explode('/', $firstItem);
+            $prefix = $parts[0] . '/';
+        }
+    }
+
+    // DAFTAR HITAM: BERKAS & DIREKTORI YANG DILINDUNGI (TIDAK BOLEH DITIMPA)
+    $protectedPatterns = [
+        'uploads/',
+        'uploads/.db_config_backup.php',
+        'db_config.php',
+        'db_config.local.php',
+        '.env',
+        '.env.local',
+        'node_modules/'
+    ];
+
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $entryName = $zip->getNameIndex($i);
+        
+        // Buang prefix folder utama zip
+        $relPath = $entryName;
+        if ($prefix !== '' && strpos($relPath, $prefix) === 0) {
+            $relPath = substr($relPath, strlen($prefix));
+        }
+
+        if ($relPath === '' || $relPath === false) continue;
+
+        // Cek proteksi berkas pengguna
+        $isProtected = false;
+        foreach ($protectedPatterns as $p) {
+            if (strpos($relPath, $p) === 0 || $relPath === rtrim($p, '/')) {
+                $isProtected = true;
+                break;
+            }
+        }
+
+        if ($isProtected) {
+            $protectedSkipped++;
+            continue;
+        }
+
+        $dest = $targetDir . '/' . $relPath;
+
+        // Jika entri adalah direktori
+        if (substr($entryName, -1) === '/') {
+            if (!is_dir($dest)) {
+                @mkdir($dest, 0755, true);
+            }
+            continue;
+        }
+
+        // Pastikan folder induk tersedia
+        $dirName = dirname($dest);
+        if (!is_dir($dirName)) {
+            @mkdir($dirName, 0755, true);
+        }
+
+        // Tulis berkas baru
+        $content = $zip->getFromIndex($i);
+        if ($content !== false) {
+            @file_put_contents($dest, $content);
+            $updatedCount++;
+        }
+    }
+
+    $zip->close();
+    @unlink($tempZip);
+
+    echo json_encode([
+        'status' => 'success',
+        'method' => 'smart_zip_extract',
+        'message' => 'Pembaruan aplikasi dari GitHub berhasil dipasang!',
+        'updated_files' => $updatedCount,
+        'protected_files_safe' => $protectedSkipped,
+        'guarantee' => 'Data database, foto/berkas di folder uploads, dan file konfigurasi koneksi tetap 100% aman dan tidak terhapus.'
+    ]);
     exit();
 }
 

@@ -59,6 +59,8 @@ const DEFAULT_REPO_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}`;
 export default function UpdateSystem() {
   const [loading, setLoading] = useState(false);
   const [pulling, setPulling] = useState(false);
+  const [updatingWeb, setUpdatingWeb] = useState(false);
+  const [updateResult, setUpdateResult] = useState<any>(null);
   const [commits, setCommits] = useState<GitCommit[]>([]);
   const [latestCommit, setLatestCommit] = useState<GitCommit | null>(null);
   const [serverInfo, setServerInfo] = useState<ServerVersionInfo | null>(null);
@@ -135,6 +137,52 @@ export default function UpdateSystem() {
     fetchServerInfo();
     checkGitHubUpdates(false);
   }, []);
+
+  const handleAutoUpdateWeb = async () => {
+    const confirm = window.confirm(
+      "PERBARUI SISTEM DARI GITHUB SEKARANG:\n\n" +
+      "Apakah Anda ingin memperbarui sistem aplikasi ini langsung dari GitHub?\n\n" +
+      "JAMINAN KEAMANAN DATA TERSIMPAN:\n" +
+      "✓ Database MySQL/MariaDB (Data Siswa, Guru, Nilai, Rombel, Dokumen) TETAP UTUH 100%.\n" +
+      "✓ Semua foto & berkas di folder 'uploads/' TIDAK AKAN TERHAPUS / TERTIMPA.\n" +
+      "✓ File konfigurasi koneksi (db_config.php) TETAP AMAN.\n\n" +
+      "Hanya berkas kode aplikasi dan aset frontend yang diperbarui.\n" +
+      "Klik OK untuk melanjutkan proses pembaruan otomatis."
+    );
+    if (!confirm) return;
+
+    setUpdatingWeb(true);
+    setUpdateResult(null);
+    setNotification(null);
+
+    try {
+      const apiUrl = getMysqlApiUrl();
+      const res = await fetch(`${apiUrl}?action=auto_update_web`, { method: 'POST' });
+      const json = await res.json();
+      setUpdateResult(json);
+
+      if (json.status === 'success') {
+        setNotification({
+          type: 'success',
+          message: json.message || 'Pembaruan aplikasi dari GitHub berhasil dipasang!'
+        });
+        fetchServerInfo();
+        checkGitHubUpdates(false);
+      } else {
+        setNotification({
+          type: 'error',
+          message: json.error || json.message || 'Gagal memperbarui aplikasi dari GitHub.'
+        });
+      }
+    } catch (err: any) {
+      setNotification({
+        type: 'error',
+        message: 'Koneksi ke server backend gagal: ' + err.message
+      });
+    } finally {
+      setUpdatingWeb(false);
+    }
+  };
 
   const handleGitPull = async () => {
     const confirm = window.confirm(
@@ -220,9 +268,17 @@ export default function UpdateSystem() {
 
             <div className="flex flex-wrap items-center gap-3 shrink-0">
               <Button
+                onClick={handleAutoUpdateWeb}
+                disabled={updatingWeb}
+                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl px-6 h-12 shadow-xl shadow-emerald-500/20 transition-all flex items-center gap-2 text-sm"
+              >
+                <RefreshCw className={`w-4 h-4 ${updatingWeb ? 'animate-spin' : ''}`} />
+                {updatingWeb ? 'Sedang Memperbarui...' : 'Perbarui Otomatis dari GitHub'}
+              </Button>
+              <Button
                 onClick={() => checkGitHubUpdates(true)}
                 disabled={loading}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl px-5 h-12 shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2"
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl px-4 h-12 shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 {loading ? 'Memeriksa...' : 'Cek Pembaruan'}
@@ -265,6 +321,56 @@ export default function UpdateSystem() {
             </div>
           </div>
         </div>
+
+        {/* Banner Jaminan Keamanan Data Tersimpan */}
+        <div className="rounded-3xl border border-emerald-200 bg-emerald-50/60 p-5 md:p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-600/20">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-slate-900">
+                  Pembaruan 1-Klik Aman (Zero Data Loss Protection)
+                </h2>
+                <Badge className="bg-emerald-600 text-white text-[11px] font-bold">Aman Data</Badge>
+              </div>
+              <p className="text-xs text-slate-600 max-w-3xl leading-relaxed">
+                Pembaruan hanya menimpa file kode program dan aset antarmuka terbaru. 
+                <strong> Seluruh data siswa, guru, nilai, akun database, foto/dokumen di folder <code className="text-emerald-800 font-mono">uploads/</code>, dan konfigurasi database dijamin tetap utuh 100%.</strong>
+              </p>
+            </div>
+          </div>
+
+          <Button
+            onClick={handleAutoUpdateWeb}
+            disabled={updatingWeb}
+            className="w-full md:w-auto bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-2xl px-6 h-11 shrink-0 shadow transition-all flex items-center justify-center gap-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${updatingWeb ? 'animate-spin' : ''}`} />
+            {updatingWeb ? 'Sedang Memperbarui...' : 'Perbarui Aplikasi Sekarang'}
+          </Button>
+        </div>
+
+        {/* Hasil Eksekusi Pembaruan Otomatis */}
+        {updateResult && (
+          <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-md space-y-2 text-xs">
+            <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span>Status Pembaruan: {updateResult.message || 'Selesai'}</span>
+            </div>
+            {updateResult.updated_files !== undefined && (
+              <div className="text-slate-600">
+                Jumlah berkas sistem yang berhasil diperbarui: <span className="font-bold text-indigo-600">{updateResult.updated_files} berkas</span>
+              </div>
+            )}
+            {updateResult.guarantee && (
+              <div className="text-emerald-700 bg-emerald-50 p-2.5 rounded-xl font-medium border border-emerald-100">
+                {updateResult.guarantee}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Notifikasi feedback */}
         {notification && (
