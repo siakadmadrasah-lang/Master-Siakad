@@ -15,6 +15,7 @@ export interface KopSuratCustomData {
   telepon?: string;
   email?: string;
   website?: string;
+  kontak?: string;
   logo_url?: string;
   logo_kanan_url?: string;
   garis_style?: 'double' | 'single' | 'thick' | 'accent' | 'none';
@@ -61,24 +62,31 @@ const KopSurat = ({ customData }: KopSuratProps) => {
   useEffect(() => {
     const handleUpdate = () => setLocalTick(t => t + 1);
     window.addEventListener('siakad_identitas_updated', handleUpdate);
+    window.addEventListener('siakad_settings_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
     return () => {
       window.removeEventListener('siakad_identitas_updated', handleUpdate);
+      window.removeEventListener('siakad_settings_updated', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
     };
   }, []);
 
-  const scopedIdentitasKey = `identitas_madrasah_${activeMadrasahId}`;
+  const effectiveScopedKey = (!activeMadrasahId || activeMadrasahId === 'default' || activeMadrasahId === 'madrasah_default')
+    ? 'identitas_madrasah'
+    : `identitas_madrasah_${activeMadrasahId}`;
   
   // Baca identitas dari berbagai layer fallback (settings, localStorage, activeMadrasah)
   let cachedIdentitas: any = {};
   try {
-    const rawScoped = localStorage.getItem(scopedIdentitasKey);
+    const rawScoped = localStorage.getItem(effectiveScopedKey);
     const rawGlobal = localStorage.getItem('siakad_identitas_madrasah');
+    const rawDefault = localStorage.getItem('identitas_madrasah');
     if (rawScoped) {
       cachedIdentitas = JSON.parse(rawScoped);
     } else if (rawGlobal) {
       cachedIdentitas = JSON.parse(rawGlobal);
+    } else if (rawDefault) {
+      cachedIdentitas = JSON.parse(rawDefault);
     }
   } catch (e) {
     // Ignore parse error
@@ -86,29 +94,32 @@ const KopSurat = ({ customData }: KopSuratProps) => {
 
   const identitas = {
     ...(settings.identitas_madrasah || {}),
-    ...(settings[scopedIdentitasKey] || {}),
+    ...(settings[effectiveScopedKey] || {}),
     ...cachedIdentitas,
   };
 
   const general = settings.general || {};
 
   // 1. Header Pengayom (misal: KEMENTERIAN AGAMA REPUBLIK INDONESIA / LP MA'ARIF NU)
-  const rawHeaderPengayom = customData?.header_pengayom 
-    || (identitas.header_pengayom && identitas.header_pengayom.trim()) 
-    || '';
+  const effectiveHeaderPengayom = (customData?.header_pengayom !== undefined && customData.header_pengayom !== '')
+    ? customData.header_pengayom
+    : (identitas.header_pengayom !== undefined && identitas.header_pengayom !== '')
+      ? identitas.header_pengayom
+      : 'KEMENTERIAN AGAMA REPUBLIK INDONESIA';
 
   // 2. Nama Yayasan
-  const rawNamaYayasan = customData?.nama_yayasan 
-    || (identitas.nama_yayasan_kop && identitas.nama_yayasan_kop.trim()) 
-    || identitas.nama_yayasan 
-    || (activeMadrasah as any)?.nama_yayasan 
-    || '';
+  const rawNamaYayasan = (customData?.nama_yayasan !== undefined && customData.nama_yayasan !== '')
+    ? customData.nama_yayasan
+    : (identitas.nama_yayasan_kop && identitas.nama_yayasan_kop.trim())
+      || (identitas.nama_yayasan && identitas.nama_yayasan.trim())
+      || (activeMadrasah as any)?.nama_yayasan
+      || '';
 
   // Cegah duplikasi teks jika Header Pengayom dan Nama Yayasan berisi teks yang sama
-  const isDuplicateHeader = rawHeaderPengayom && rawNamaYayasan &&
-    rawHeaderPengayom.trim().toLowerCase() === rawNamaYayasan.trim().toLowerCase();
+  const isDuplicateHeader = effectiveHeaderPengayom && rawNamaYayasan &&
+    effectiveHeaderPengayom.trim().toLowerCase() === rawNamaYayasan.trim().toLowerCase();
 
-  const headerPengayom = isDuplicateHeader ? '' : rawHeaderPengayom;
+  const headerPengayom = isDuplicateHeader ? '' : effectiveHeaderPengayom;
   const namaYayasan = rawNamaYayasan;
 
   // 3. Nama Kop Surat (KOP UTAMA - 1 BARIS OTOMATIS)
@@ -120,7 +131,7 @@ const KopSurat = ({ customData }: KopSuratProps) => {
     || (identitas.nama_madrasah && identitas.nama_madrasah.trim())
     || activeMadrasah?.nama_madrasah
     || general.school_name
-    || "MI MA'ARIF NU 2 SANGGREMAN";
+    || "MADRASAH IBTIDAIYAH NEGERI";
 
   // 4. Sub-Header (Akreditasi / NSM / NPSN)
   const nsmVal = identitas.nsm || activeMadrasah?.nsm || '';
@@ -133,9 +144,10 @@ const KopSurat = ({ customData }: KopSuratProps) => {
     akredVal ? `AKREDITASI ${akredVal}` : ''
   ].filter(Boolean).join(' | ');
 
-  const subHeader = (customData?.sub_header && customData.sub_header.trim())
-    || (identitas.sub_header_kop && identitas.sub_header_kop.trim())
-    || defaultSubHeaderParts;
+  const subHeader = (customData?.sub_header !== undefined && customData.sub_header !== '')
+    ? customData.sub_header
+    : (identitas.sub_header_kop && identitas.sub_header_kop.trim())
+      || defaultSubHeaderParts;
 
   // 5. Alamat Lengkap mengalir dari Profil Madrasah atau Kop Custom
   const rawAlamat = identitas.alamat || activeMadrasah?.alamat || general.address || 'Jl. Raya Sanggreman No. 12';
@@ -160,9 +172,10 @@ const KopSurat = ({ customData }: KopSuratProps) => {
 
   const defaultAlamatLengkap = [rawAlamat, ...detailWilayahParts].filter(Boolean).join(', ');
 
-  const alamatSekolah = (customData?.alamat && customData.alamat.trim())
-    || (identitas.alamat_kop && identitas.alamat_kop.trim())
-    || defaultAlamatLengkap;
+  const alamatSekolah = (customData?.alamat !== undefined && customData.alamat !== '')
+    ? customData.alamat
+    : (identitas.alamat_kop && identitas.alamat_kop.trim())
+      || defaultAlamatLengkap;
 
   // 6. Kontak & Media mengalir langsung dari Profil Madrasah atau Kop Custom
   const telp = customData?.telepon ?? (identitas.telepon || activeMadrasah?.telepon || general.phone || '');
@@ -178,9 +191,10 @@ const KopSurat = ({ customData }: KopSuratProps) => {
   const kontakDefault = dynamicKontakParts.join(' | ');
   
   // Kontak kustom: jika customData.kontak dioper, atau kontak_kop diisi di panel identitas madrasah
-  const kontakCustom = (customData?.kontak && customData.kontak.trim()) 
-    || (identitas.kontak_kop && identitas.kontak_kop.trim()) 
-    || '';
+  const kontakCustom = (customData?.kontak !== undefined && customData.kontak !== '')
+    ? customData.kontak
+    : (identitas.kontak_kop && identitas.kontak_kop.trim()) 
+      || '';
 
   const kontak = kontakCustom || kontakDefault;
 
