@@ -40,6 +40,7 @@ const LCKHPublic = lazy(() => import("./pages/LCKHPublic"));
 const RuangGuruPublic = lazy(() => import("./pages/RuangGuruPublic"));
 const CoverGeneratorPublic = lazy(() => import("./pages/CoverGeneratorPublic"));
 const BedahCPPublic = lazy(() => import("./pages/BedahCPPublic"));
+const RPPKarakterPublic = lazy(() => import("./pages/RPPKarakterPublic"));
 const KisiKisiPublic = lazy(() => import("./pages/KisiKisiPublic"));
 const InputNilaiPublic = lazy(() => import("./pages/InputNilaiPublic"));
 const PrestasiPublic = lazy(() => import("./pages/PrestasiPublic"));
@@ -78,6 +79,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 // Lazy Loaded Sub-Modules
 const MatrikKurikulum = lazy(() => import("./pages/admin/kurikulum/MatrikKurikulum"));
 const BedahCP = lazy(() => import("./pages/admin/kurikulum/BedahCP"));
+const RPPKarakter = lazy(() => import("./pages/admin/kurikulum/RPPKarakter"));
 const MataPelajaran = lazy(() => import("./pages/admin/kurikulum/MataPelajaran"));
 const JadwalPelajaranAdmin = lazy(() => import("./pages/admin/kurikulum/JadwalPelajaran"));
 const AITeachingAdmin = lazy(() => import("./pages/admin/kurikulum/AITeaching"));
@@ -175,6 +177,8 @@ const App = () => (
                     <Route path="/guru-mandiri" element={<RuangGuruPublic />} />
                     <Route path="/cover-generator" element={<CoverGeneratorPublic />} />
                     <Route path="/bedah-cp" element={<BedahCPPublic />} />
+                    <Route path="/rpp-karakter" element={<RPPKarakterPublic />} />
+                    <Route path="/rpp" element={<RPPKarakterPublic />} />
                     <Route path="/kisi-kisi" element={<KisiKisiPublic />} />
                     <Route path="/input-nilai" element={<InputNilaiPublic />} />
                     {/* Prestasi & Kejuaraan Siswa Publik */}
@@ -222,6 +226,7 @@ const App = () => (
                   {/* Kurikulum Admin */}
                   <Route path="/admin/kurikulum/matrik" element={<MatrikKurikulum />} />
                   <Route path="/admin/kurikulum/bedah-cp" element={<BedahCP />} />
+                  <Route path="/admin/kurikulum/rpp-karakter" element={<RPPKarakter />} />
                   <Route path="/admin/kurikulum/mapel" element={<MataPelajaran />} />
                   <Route path="/admin/kurikulum/jadwal" element={<JadwalPelajaranAdmin />} />
                   <Route path="/admin/kurikulum/ai-teaching" element={<AITeachingAdmin />} />

@@ -95,6 +95,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title }) => {
         { icon: Calendar, label: 'Jadwal Pelajaran', path: '/admin/kurikulum/jadwal' },
         { icon: Table, label: 'Matrik Kurikulum', path: '/admin/kurikulum/matrik' },
         { icon: BookMarked, label: 'Bedah CP (KMA 450)', path: '/admin/kurikulum/bedah-cp' },
+        { icon: HeartHandshake, label: 'RPP Karakter', path: '/admin/kurikulum/rpp-karakter' },
         { icon: ClipboardList, label: 'LCKH Guru', path: '/admin/kurikulum/lckh' },
         { icon: UserCheck2, label: 'Absensi Harian', path: '/admin/kurikulum/absensi' },
         { icon: ClipboardCheck, label: 'Rekap Absensi', path: '/admin/kurikulum/rekap-absensi' },

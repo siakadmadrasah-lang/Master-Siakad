@@ -1121,6 +1121,18 @@ const RuangGuruPublic: React.FC = () => {
       onCreate: () => handleModuleClick('/bedah-cp')
     },
     {
+      id: 'rpp-karakter',
+      title: 'RPP Karakter Resmi (P5-PPRA)',
+      subtitle: 'Penyusunan Rencana Pelaksanaan Pembelajaran Berorientasi Karakter, Adab & Rahmatan lil \'Alamin.',
+      icon: HeartHandshake,
+      path: '/rpp-karakter',
+      color: 'from-emerald-600 to-teal-800',
+      tag: 'Karakter & Kurikulum',
+      badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+      actionText: 'Susun RPP Karakter',
+      onCreate: () => handleModuleClick('/rpp-karakter')
+    },
+    {
       id: 'kisi-kisi',
       title: 'Kisi-Kisi & Bank Soal Asesmen',
       subtitle: 'Penyusunan instrumen soal ujian (PG, Isian, Uraian) berbasis kisi-kisi dan cetak naskah soal.',
