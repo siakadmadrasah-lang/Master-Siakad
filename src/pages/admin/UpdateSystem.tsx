@@ -164,10 +164,20 @@ export default function UpdateSystem() {
       if (json.status === 'success') {
         setNotification({
           type: 'success',
-          message: json.message || 'Pembaruan aplikasi dari GitHub berhasil dipasang!'
+          message: (json.message || 'Pembaruan aplikasi dari GitHub berhasil dipasang!') + ' Membersihkan cache browser...'
         });
         fetchServerInfo();
         checkGitHubUpdates(false);
+        // Otomatis bersihkan cache lokal agar antarmuka pengguna langsung ter-update seketika
+        try {
+          if ('caches' in window) {
+            caches.keys().then(names => names.forEach(name => caches.delete(name)));
+          }
+          localStorage.removeItem('siakad_version_cache');
+        } catch { /* ignore */ }
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
       } else {
         setNotification({
           type: 'error',
@@ -201,9 +211,18 @@ export default function UpdateSystem() {
       if (json.status === 'success') {
         setNotification({
           type: 'success',
-          message: json.message || 'Sinkronisasi Git Pull berhasil!'
+          message: (json.message || 'Sinkronisasi Git Pull berhasil!') + ' Memuat ulang sistem...'
         });
         fetchServerInfo();
+        try {
+          if ('caches' in window) {
+            caches.keys().then(names => names.forEach(name => caches.delete(name)));
+          }
+          localStorage.removeItem('siakad_version_cache');
+        } catch { /* ignore */ }
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
       } else {
         setNotification({
           type: 'info',

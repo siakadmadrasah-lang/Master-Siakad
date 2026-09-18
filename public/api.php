@@ -1029,9 +1029,15 @@ if ($action === 'git_pull') {
         exit();
     }
 
+    $targetDir = __DIR__;
+    $cmdDir = $targetDir;
+    if (file_exists($targetDir . '/../.git')) {
+        $cmdDir = realpath($targetDir . '/..');
+    }
+
     $output = [];
     $returnVar = 0;
-    $cmd = 'git pull origin main 2>&1';
+    $cmd = 'cd ' . escapeshellarg($cmdDir) . ' && git pull origin main 2>&1';
     @exec($cmd, $output, $returnVar);
     $outStr = implode("\n", $output);
 
@@ -1044,7 +1050,7 @@ if ($action === 'git_pull') {
     } else {
         echo json_encode([
             'status' => 'warning',
-            'message' => 'Perintah Git Pull selesai dengan kode status: ' . $returnVar,
+            'message' => 'Perintah Git Pull selesai dengan kode: ' . $returnVar . ' (' . ($outStr ?: 'Pastikan folder hosting terhubung sebagai Git repo atau gunakan tombol Perbarui Otomatis') . ')',
             'output' => $outStr ?: 'Tidak ada respon teks dari Git.'
         ]);
     }
