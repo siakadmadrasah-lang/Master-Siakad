@@ -164,10 +164,12 @@ if (str_contains($lowerImg, '.jpeg') || str_contains($lowerImg, '.jpg')) {
     $ogImageType = !empty($seo['og_image_type']) ? $seo['og_image_type'] : 'image/jpeg';
 }
 
-// Muat index.html (periksa dist/index.html terlebih dahulu untuk mendukung deployment git root di Plesk)
+// Muat index.html (periksa dist/index.html atau index.prod.html terlebih dahulu untuk mendukung deployment git root di Plesk)
 $htmlFile = __DIR__ . '/index.html';
 if (file_exists(__DIR__ . '/dist/index.html')) {
     $htmlFile = __DIR__ . '/dist/index.html';
+} elseif (file_exists(__DIR__ . '/index.prod.html')) {
+    $htmlFile = __DIR__ . '/index.prod.html';
 }
 
 if (!file_exists($htmlFile)) {
@@ -184,12 +186,27 @@ if (str_contains($html, '/src/main.tsx')) {
     $assetsDir = __DIR__ . '/assets';
     if (is_dir($assetsDir)) {
         $files = scandir($assetsDir);
+        $candidateJs = [];
+        $candidateCss = [];
         foreach ($files as $f) {
             if (preg_match('/^index-[a-zA-Z0-9_-]+\.js$/i', $f)) {
-                $foundJs = '/assets/' . $f;
+                $candidateJs[] = $f;
             } elseif (preg_match('/^index-[a-zA-Z0-9_-]+\.css$/i', $f)) {
-                $foundCss = '/assets/' . $f;
+                $candidateCss[] = $f;
             }
+        }
+        // Pastikan memilih file JS utama yang terbesar ukurannya (karena chunk auxillary seperti index-BXwTQNSI.js hanya belasan KB, sedangkan bundle utama > 500KB)
+        if (!empty($candidateJs)) {
+            usort($candidateJs, function($a, $b) use ($assetsDir) {
+                return filesize($assetsDir . '/' . $b) <=> filesize($assetsDir . '/' . $a);
+            });
+            $foundJs = '/assets/' . $candidateJs[0];
+        }
+        if (!empty($candidateCss)) {
+            usort($candidateCss, function($a, $b) use ($assetsDir) {
+                return filesize($assetsDir . '/' . $b) <=> filesize($assetsDir . '/' . $a);
+            });
+            $foundCss = '/assets/' . $candidateCss[0];
         }
     }
     if (!empty($foundJs)) {

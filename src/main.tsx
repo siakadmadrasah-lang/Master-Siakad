@@ -27,26 +27,31 @@ window.addEventListener("error", (event) => {
 
   if (isChunkError) {
     console.warn("Detected chunk loading error due to build update. Forcing fresh reload...");
-    const lastReload = sessionStorage.getItem("last_chunk_reload");
-    const now = Date.now();
+    try {
+      const lastReload = sessionStorage.getItem("last_chunk_reload");
+      const now = Date.now();
 
-    // Hindari perulangan reload terus menerus jika error berasal dari hal lain
-    if (!lastReload || now - parseInt(lastReload, 10) > 15000) {
-      sessionStorage.setItem("last_chunk_reload", now.toString());
-      
-      try {
-        if ("caches" in window) {
-          caches.keys().then((names) => {
-            Promise.all(names.map((name) => caches.delete(name))).then(() => {
-              window.location.reload();
+      // Hindari perulangan reload terus menerus jika error berasal dari hal lain
+      if (!lastReload || now - parseInt(lastReload, 10) > 15000) {
+        sessionStorage.setItem("last_chunk_reload", now.toString());
+        
+        try {
+          if ("caches" in window) {
+            caches.keys().then((names) => {
+              Promise.all(names.map((name) => caches.delete(name))).then(() => {
+                window.location.reload();
+              });
             });
-          });
-        } else {
+          } else {
+            window.location.reload();
+          }
+        } catch {
           window.location.reload();
         }
-      } catch {
-        window.location.reload();
       }
+    } catch {
+      // Storage access blocked in sandboxed iframe
+      window.location.reload();
     }
   }
 });

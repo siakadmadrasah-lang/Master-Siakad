@@ -51,24 +51,22 @@ const DOKUMEN_INFO: Record<string, { label: string }> = {
 };
 
 const Index = () => {
-  const { settings = {}, loading: settingsLoading } = useSiteSettings();
+  const { settings = {} } = useSiteSettings();
   const portalLoaderCfg = settings?.page_loader?.portal || (settings?.page_loader?.show_for_portal !== false ? settings?.page_loader : null);
-  const isPortalLoaderActive = portalLoaderCfg ? portalLoaderCfg.enabled !== false : true;
-  const [portalTransitionLoading, setPortalTransitionLoading] = useState(true);
+  const isPortalLoaderActive = portalLoaderCfg ? portalLoaderCfg.enabled !== false : false;
+  const [portalTransitionLoading, setPortalTransitionLoading] = useState(isPortalLoaderActive);
 
   useEffect(() => {
-    if (!settingsLoading) {
-      if (isPortalLoaderActive) {
-        const dur = portalLoaderCfg?.progress_duration || 800;
-        const timer = setTimeout(() => {
-          setPortalTransitionLoading(false);
-        }, dur);
-        return () => clearTimeout(timer);
-      } else {
+    if (isPortalLoaderActive) {
+      const dur = Math.min(portalLoaderCfg?.progress_duration || 800, 1200);
+      const timer = setTimeout(() => {
         setPortalTransitionLoading(false);
-      }
+      }, dur);
+      return () => clearTimeout(timer);
+    } else {
+      setPortalTransitionLoading(false);
     }
-  }, [settingsLoading, isPortalLoaderActive, portalLoaderCfg?.progress_duration]);
+  }, [isPortalLoaderActive, portalLoaderCfg?.progress_duration]);
 
   const today = new Date();
   const formattedDate = today.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -104,12 +102,12 @@ const Index = () => {
     fetchDocuments();
   }, []);
 
-  if (settingsLoading || (isPortalLoaderActive && portalTransitionLoading)) {
-    return <InitialPageLoader isRuangGuru={false} />;
-  }
-
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col relative">
+      {/* Page Loader sebagai Overlay Non-Blocking agar halaman tidak pernah blank */}
+      {isPortalLoaderActive && portalTransitionLoading && (
+        <InitialPageLoader isRuangGuru={false} />
+      )}
       <SEO />
       <Navbar />
       <main className="flex-1">

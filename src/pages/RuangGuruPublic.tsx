@@ -231,13 +231,12 @@ const RuangGuruPublic: React.FC = () => {
 
   // Page Loader Transition State for Ruang Guru
   const rgLoaderCfg = settings?.page_loader?.ruang_guru || (settings?.page_loader?.show_for_ruang_guru !== false ? settings?.page_loader : null);
-  const [pageLoading, setPageLoading] = useState(() => {
-    return rgLoaderCfg ? rgLoaderCfg.enabled !== false : true;
-  });
+  const isRgLoaderActive = rgLoaderCfg ? rgLoaderCfg.enabled !== false : false;
+  const [pageLoading, setPageLoading] = useState(isRgLoaderActive);
 
   useEffect(() => {
     if (pageLoading) {
-      const dur = rgLoaderCfg?.progress_duration || 800;
+      const dur = Math.min(rgLoaderCfg?.progress_duration || 800, 1200);
       const timer = setTimeout(() => {
         setPageLoading(false);
       }, dur);
@@ -1228,12 +1227,12 @@ const RuangGuruPublic: React.FC = () => {
     navigate(path);
   };
 
-  if (pageLoading) {
-    return <InitialPageLoader isRuangGuru={true} customSettings={rgLoaderCfg} />;
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-slate-100/60 to-slate-200/40 text-slate-800 flex flex-col pt-20">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-slate-100/60 to-slate-200/40 text-slate-800 flex flex-col pt-20 relative">
+      {/* Page Loader Non-blocking Overlay */}
+      {pageLoading && (
+        <InitialPageLoader isRuangGuru={true} customSettings={rgLoaderCfg} />
+      )}
       <SEO 
         title="Ruang Kerja Guru & Pendidik Mandiri - Si@Kad Madrasah"
         description="Portal pengerjaan dokumen administrasi guru, LCKH harian, jurnal pembiasaan, bedah CP, kisi-kisi soal, dan cover perangkat pembelajaran."

@@ -214,15 +214,8 @@ export const SiteSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
     return defaultSettings;
   });
-  // If we already have cached settings in localStorage, we do not need to block initial render!
-  const [loading, setLoading] = useState<boolean>(() => {
-    try {
-      const cached = localStorage.getItem('siakad_site_settings');
-      return !cached;
-    } catch {
-      return false;
-    }
-  });
+  // Jangan pernah memblokir render awal dengan loading=true agar tidak menimbulkan layar blank!
+  const [loading, setLoading] = useState<boolean>(false);
 
   const fetchSettings = useCallback(async () => {
     try {

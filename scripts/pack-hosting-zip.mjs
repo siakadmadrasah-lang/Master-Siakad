@@ -34,7 +34,7 @@ async function packZip() {
     process.exit(1);
   }
 
-  // Sinkronisasi dist/assets ke root assets/ agar kompatibel jika repo di-pull ke root Plesk
+  // Sinkronisasi dist/assets ke root assets/ dan index.prod.html agar kompatibel jika repo di-pull ke root Plesk/cPanel
   try {
     const rootAssetsDir = path.join(rootDir, 'assets');
     const distAssetsDir = path.join(distDir, 'assets');
@@ -44,6 +44,13 @@ async function packZip() {
       }
       fs.cpSync(distAssetsDir, rootAssetsDir, { recursive: true });
       console.log('[pack-hosting-zip] ✅ Sinkronisasi dist/assets ke root assets/ selesai.');
+    }
+
+    const distIndexHtml = path.join(distDir, 'index.html');
+    const rootIndexProdHtml = path.join(rootDir, 'index.prod.html');
+    if (fs.existsSync(distIndexHtml)) {
+      fs.copyFileSync(distIndexHtml, rootIndexProdHtml);
+      console.log('[pack-hosting-zip] ✅ Sinkronisasi dist/index.html ke root index.prod.html selesai.');
     }
   } catch (e) {
     console.warn('[pack-hosting-zip] Warning saat copy assets ke root:', e.message);

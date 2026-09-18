@@ -39,11 +39,17 @@ export class ErrorBoundary extends Component<Props, State> {
       msg.includes('reading \'usecontext\'');
 
     if (isChunkError || isHookOrContextMismatch) {
-      const reloadKey = 'eb_chunk_auto_reloaded';
-      const lastReload = sessionStorage.getItem(reloadKey);
-      const now = Date.now();
-      if (!lastReload || now - parseInt(lastReload, 10) > 10000) {
-        sessionStorage.setItem(reloadKey, now.toString());
+      try {
+        const reloadKey = 'eb_chunk_auto_reloaded';
+        const lastReload = sessionStorage.getItem(reloadKey);
+        const now = Date.now();
+        if (!lastReload || now - parseInt(lastReload, 10) > 10000) {
+          sessionStorage.setItem(reloadKey, now.toString());
+          setTimeout(() => {
+            this.handleReload();
+          }, 150);
+        }
+      } catch {
         setTimeout(() => {
           this.handleReload();
         }, 150);
